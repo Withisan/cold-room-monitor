@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cold Room Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<style>
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2128;
+  --border:rgba(255,255,255,0.08);--text:#e6edf3;--muted:#7d8590;
+  --blue:#58a6ff;--green:#3fb950;--red:#f85149;--amber:#d29922;--purple:#bc8cff;
+  --blue-bg:rgba(88,166,255,0.1);--green-bg:rgba(63,185,80,0.1);
+  --red-bg:rgba(248,81,73,0.1);--amber-bg:rgba(210,153,34,0.1);--purple-bg:rgba(188,140,255,0.1);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:30;}
+.logo{display:flex;align-items:center;gap:10px;}
+.logo-icon{width:30px;height:30px;background:var(--blue-bg);border:1px solid rgba(88,166,255,.3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;}
+.logo-text{font-size:14px;font-weight:600;}
+.logo-sub{font-size:10px;color:var(--muted);}
+.topbar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.conn-badge{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid var(--border);}
+.conn-dot{width:7px;height:7px;border-radius:50%;}
+.dot-connecting{background:var(--amber);animation:blink 1s infinite;}
+.dot-connected{background:var(--green);}
+.dot-error{background:var(--red);}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.alarm-banner{background:rgba(248,81,73,.12);border-bottom:1px solid rgba(248,81,73,.3);padding:8px 20px;font-size:13px;color:var(--red);display:none;align-items:center;gap:10px;}
+.alarm-banner.show{display:flex;}
+.alarm-dismiss{margin-left:auto;background:none;border:1px solid rgba(248,81,73,.4);color:var(--red);border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;}
+.main{padding:14px 20px;max-width:1400px;margin:0 auto;}
+.section-title{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px;}
+.btn{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(88,166,255,.3);border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:500;white-space:nowrap;}
+.btn:hover{background:rgba(88,166,255,.2);}
+.btn-green{background:var(--green-bg);color:var(--green);border-color:rgba(63,185,80,.3);}
+.btn-green:hover{background:rgba(63,185,80,.2);}
+.btn-amber{background:var(--amber-bg);color:var(--amber);border-color:rgba(210,153,34,.3);}
+.btn-red{background:var(--red-bg);color:var(--red);border-color:rgba(248,81,73,.3);}
+.btn-icon{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:3px 6px;border-radius:4px;}
+.btn-icon:hover{color:var(--red);}
+.divider{width:1px;height:22px;background:var(--border);}
+.settings-bar{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.settings-bar input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;width:200px;}
+.settings-bar input:focus{outline:none;border-color:var(--blue);}
+.settings-bar label{font-size:12px;color:var(--muted);white-space:nowrap;}
+.status-pill{font-size:11px;padding:3px 8px;border-radius:20px;}
+.pill-ok{background:var(--green-bg);color:var(--green);}
+.pill-no{background:var(--border);color:var(--muted);}
+.panel-overlay{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;}
+.panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.panel-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;}
+.badge{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:500;}
+.badge-green{background:var(--green-bg);color:var(--green);}
+.badge-amber{background:var(--amber-bg);color:var(--amber);}
+
+/* EMAIL PANEL */
+.email-keys-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;}
+@media(max-width:700px){.email-keys-grid{grid-template-columns:1fr;}}
+.key-box{background:var(--surface2);border-radius:8px;padding:10px;}
+.key-label{font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;}
+.key-box input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:12px;width:100%;}
+.key-box input:focus{outline:none;border-color:var(--green);}
+.recipients-section{margin-top:10px;}
+.recipients-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.recipients-list{display:flex;flex-direction:column;gap:5px;margin-bottom:8px;}
+.recipient-row{display:flex;align-items:center;gap:6px;}
+.recipient-row input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;}
+.inp-rname{width:120px;}
+.inp-email{flex:1;min-width:180px;}
+.add-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.add-row input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;}
+details summary{cursor:pointer;font-size:11px;color:var(--blue);margin-top:10px;list-style:none;}
+details summary::-webkit-details-marker{display:none;}
+.hint-box{background:var(--surface2);border-radius:8px;padding:12px;font-size:11px;color:var(--muted);line-height:1.9;margin-top:6px;}
+.hint-box b{color:var(--text);}
+.hint-box code{background:var(--bg);padding:1px 5px;border-radius:3px;font-size:11px;color:var(--blue);}
+.step-num{display:inline-flex;width:18px;height:18px;background:var(--blue-bg);color:var(--blue);border-radius:50%;align-items:center;justify-content:center;font-size:10px;font-weight:600;margin-right:4px;}
+
+/* ALARM SETTINGS */
+.alarm-info-box{background:var(--surface2);border-radius:8px;padding:12px;font-size:12px;color:var(--muted);line-height:1.9;margin-bottom:12px;}
+.alarm-info-box b{color:var(--text);}
+.alarm-info-box .msg-preview{background:var(--bg);border-radius:6px;padding:8px 10px;font-size:11px;font-family:monospace;margin:4px 0;line-height:1.7;color:var(--green);}
+.cooldown-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:12px;}
+.cooldown-row input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;width:60px;text-align:center;}
+.alarm-table{width:100%;border-collapse:collapse;font-size:12px;}
+.alarm-table th{text-align:left;padding:6px 8px;color:var(--muted);font-weight:500;font-size:11px;border-bottom:1px solid var(--border);}
+.alarm-table td{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,0.04);}
+.alarm-table tr:last-child td{border-bottom:none;}
+.alarm-table input[type=number]{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 5px;font-size:12px;width:60px;text-align:center;}
+.alarm-table input[type=number]:focus{outline:none;border-color:var(--amber);}
+.alarm-table input[type=text]{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:12px;width:120px;}
+
+/* SUMMARY */
+.summary-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:12px;}
+.sum-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
+.sum-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;}
+.sum-val{font-size:24px;font-weight:600;line-height:1;}
+.sum-sub{font-size:10px;color:var(--muted);margin-top:2px;}
+
+/* ROOMS */
+.rooms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;}
+.room-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;transition:border-color .2s;}
+.room-card.alarm{border-color:var(--red);box-shadow:0 0 0 1px rgba(248,81,73,.12);}
+.room-card.warn{border-color:var(--amber);}
+.room-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;}
+.room-name{font-size:13px;font-weight:600;}
+.room-zone{font-size:10px;color:var(--muted);margin-top:2px;}
+.status-chip{font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;}
+.chip-ok{background:var(--green-bg);color:var(--green);}
+.chip-warn{background:var(--amber-bg);color:var(--amber);}
+.chip-err{background:var(--red-bg);color:var(--red);}
+.chip-off{background:var(--border);color:var(--muted);}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;}
+.metric-box{background:var(--surface2);border-radius:7px;padding:8px;}
+.metric-label{font-size:10px;color:var(--muted);margin-bottom:3px;}
+.metric-value{font-size:20px;font-weight:600;line-height:1;}
+.metric-unit{font-size:10px;font-weight:400;color:var(--muted);}
+.metric-hint{font-size:10px;color:var(--muted);margin-top:2px;}
+.val-cold{color:var(--blue);}
+.val-ok{color:var(--green);}
+.val-warn{color:var(--amber);}
+.val-err{color:var(--red);}
+.door-row{display:flex;align-items:center;justify-content:space-between;font-size:11px;padding-top:7px;border-top:1px solid var(--border);color:var(--muted);}
+.door-open{color:var(--amber);font-weight:600;}
+.door-closed{color:var(--green);}
+.ts-label{font-size:10px;color:var(--muted);}
+.alarm-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:2px 6px;border-radius:20px;margin-top:5px;}
+.abadge-door{background:var(--amber-bg);color:var(--amber);}
+.abadge-temp{background:var(--red-bg);color:var(--red);}
+.abadge-low{background:var(--purple-bg);color:var(--purple);}
+
+/* BOTTOM */
+.bottom-grid{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:12px;}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;}
+.chart-wrap{position:relative;width:100%;height:190px;margin-top:6px;}
+.log-list{display:flex;flex-direction:column;gap:4px;max-height:250px;overflow-y:auto;}
+.log-item{display:flex;gap:7px;align-items:flex-start;font-size:11px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);}
+.log-dot{width:6px;height:6px;border-radius:50%;margin-top:3px;flex-shrink:0;}
+.log-msg{flex:1;color:var(--text);}
+.log-time{color:var(--muted);font-size:10px;white-space:nowrap;}
+.sound-indicator{display:none;position:fixed;bottom:16px;right:16px;background:var(--red);color:#fff;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;z-index:100;}
+.sound-indicator.show{display:block;}
+@media(max-width:640px){.bottom-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<div class="sound-indicator" id="soundIndicator">⚠ แจ้งเตือน!</div>
+
+<div class="alarm-banner" id="alarmBanner">
+  <span style="font-size:15px;animation:blink .6s infinite;">⚠</span>
+  <span>มีการแจ้งเตือน: <b id="alarmCount">0</b> รายการ</span>
+  <button class="alarm-dismiss" onclick="dismissAlarms()">รับทราบ</button>
+</div>
+
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon">❄</div>
+    <div>
+      <div class="logo-text">Cold Room Monitor</div>
+      <div class="logo-sub" id="roomCountLabel">IoT Dashboard · 7 ห้องเย็น</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="status-pill pill-no" id="emailStatus">Email: ยังไม่ตั้งค่า</span>
+    <span id="clockDisplay" style="font-size:11px;color:var(--muted);"></span>
+    <div class="conn-badge">
+      <div class="conn-dot dot-connecting" id="connDot"></div>
+      <span id="connText">กำลังเชื่อมต่อ...</span>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- SETTINGS BAR -->
+  <div class="settings-bar">
+    <label>MQTT:</label>
+    <input type="text" id="brokerInput" value="broker.hivemq.com" style="width:180px;" />
+    <button class="btn" onclick="reconnect()">เชื่อมต่อ</button>
+    <div class="divider"></div>
+    <button class="btn" onclick="toggleSound()" id="soundBtn">🔔 เสียงเปิด</button>
+    <div class="divider"></div>
+    <button class="btn-green btn" onclick="showPanel('email')">📧 ตั้งค่า Email</button>
+    <button class="btn-amber btn" onclick="showPanel('alarm')">⚙ ตั้งค่า Alarm</button>
+  </div>
+
+  <!-- EMAIL PANEL -->
+  <div class="panel-overlay" id="emailPanel" style="display:none;">
+    <div class="panel-header">
+      <div class="panel-title">📧 Email แจ้งเตือน <span class="badge badge-green">EmailJS — ฟรี 200/เดือน</span></div>
+      <button class="btn" onclick="showPanel(null)">ปิด</button>
+    </div>
+
+    <!-- EmailJS Keys -->
+    <div class="email-keys-grid">
+      <div class="key-box">
+        <div class="key-label">Service ID</div>
+        <input type="text" id="ejServiceId" placeholder="service_xxxxxxx" oninput="saveEmailSettings()" />
+      </div>
+      <div class="key-box">
+        <div class="key-label">Template ID</div>
+        <input type="text" id="ejTemplateId" placeholder="template_xxxxxxx" oninput="saveEmailSettings()" />
+      </div>
+      <div class="key-box">
+        <div class="key-label">Public Key</div>
+        <input type="text" id="ejPublicKey" placeholder="xxxxxxxxxxxxxxx" oninput="saveEmailSettings()" />
+      </div>
+    </div>
+
+    <!-- Recipients -->
+    <div class="recipients-section">
+      <div class="recipients-header">
+        <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:500;">รายชื่อผู้รับ Email</span>
+        <span style="font-size:11px;color:var(--muted);" id="recipientCount">0 รายการ</span>
+      </div>
+      <div class="recipients-list" id="recipientsList"></div>
+      <div class="add-row">
+        <input type="text" class="inp-rname" id="newName" placeholder="ชื่อ เช่น หัวหน้าทีม" />
+        <input type="email" class="inp-email" id="newEmail" placeholder="email@company.com" />
+        <button class="btn btn-green" onclick="addRecipient()">+ เพิ่ม</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn btn-green" onclick="testEmail()">ส่งทดสอบทั้งหมด</button>
+    </div>
+
+    <!-- How to setup EmailJS -->
+    <details>
+      <summary>📖 วิธีสมัคร EmailJS และตั้งค่า (คลิกเพื่อดู)</summary>
+      <div class="hint-box">
+        <span class="step-num">1</span><b>สมัคร EmailJS</b> — เปิด <code>emailjs.com</code> → Sign Up ฟรี (ใช้ Email บริษัทได้)<br><br>
+        <span class="step-num">2</span><b>เพิ่ม Email Service</b> — ไปที่ <code>Email Services</code> → Add New Service → เลือก Gmail หรือ Outlook → Connect Account → Copy <b>Service ID</b><br><br>
+        <span class="step-num">3</span><b>สร้าง Template</b> — ไปที่ <code>Email Templates</code> → Create New Template<br>
+        ใส่เนื้อหา template ดังนี้:<br>
+        <div style="background:var(--bg);border-radius:6px;padding:8px;margin:4px 0;font-family:monospace;font-size:11px;color:var(--green);line-height:1.8;">
+          Subject: ⚠️ Cold Room Alert — {{room_name}}<br>
+          Body:<br>
+          เวลา: {{time}}<br>
+          ห้อง: {{room_name}}<br>
+          ประเภท: {{alarm_type}}<br>
+          รายละเอียด: {{message}}<br>
+          อุณหภูมิปัจจุบัน: {{temperature}}°C<br>
+          ค่าที่กำหนด: Min {{min_temp}}°C / Max {{max_temp}}°C
+        </div>
+        Copy <b>Template ID</b><br><br>
+        <span class="step-num">4</span><b>Copy Public Key</b> — ไปที่ <code>Account</code> → General → Copy <b>Public Key</b><br><br>
+        <span class="step-num">5</span><b>ใส่ค่าทั้ง 3</b> ในช่องด้านบน แล้วกด "ส่งทดสอบ"
+      </div>
+    </details>
+  </div>
+
+  <!-- ALARM SETTINGS PANEL -->
+  <div class="panel-overlay" id="alarmPanel" style="display:none;">
+    <div class="panel-header">
+      <div class="panel-title">⚙ ตั้งค่า Alarm <span class="badge badge-amber">บันทึกอัตโนมัติ</span></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-green" onclick="saveAlarmSettings()">บันทึก</button>
+        <button class="btn" onclick="showPanel(null)">ปิด</button>
+      </div>
+    </div>
+
+    <div class="alarm-info-box">
+      <b>ระบบแจ้งเตือนเมื่อ:</b><br>
+      🌡 <b>อุณหภูมิสูงเกิน Max</b> → ส่ง Email + เสียง ทันที<br>
+      ❄ <b>อุณหภูมิต่ำกว่า Min</b> (อุณหภูมิตก) → ส่ง Email + เสียง ทันที<br>
+      🚪 <b>ประตูเปิด</b> → ส่ง Email + เสียง ทันที<br>
+      🔄 <b>ประตูเปิด/ปิด</b> (เปลี่ยนสถานะ) → บันทึก log เท่านั้น<br><br>
+      <b>รูปแบบ Email ที่ส่ง:</b>
+      <div class="msg-preview">Subject: ⚠️ Cold Room Alert — ห้องเย็น A<br>เวลา: 14:32:05<br>ห้อง: ห้องเย็น A<br>ประเภท: อุณหภูมิสูงเกิน<br>รายละเอียด: อุณหภูมิสูงเกิน -10.5°C (ค่าสูงสุด -15°C)<br>อุณหภูมิปัจจุบัน: -10.5°C<br>ค่าที่กำหนด: Min -20°C / Max -15°C</div>
+      <b>ความถี่:</b> ส่งทันทีเมื่อเกิด alarm จากนั้น cooldown ตามที่ตั้งไว้เพื่อป้องกัน spam
+    </div>
+
+    <div class="cooldown-row">
+      <span>Cooldown:</span>
+      <input type="number" id="cooldownMin" value="5" min="1" max="60" />
+      <span>นาที / ครั้ง (ป้องกัน Email ซ้ำบ่อยเกินไป)</span>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table class="alarm-table" id="alarmTable">
+        <thead>
+          <tr>
+            <th>ห้อง</th>
+            <th>ชื่อห้อง</th>
+            <th>Zone</th>
+            <th>Target °C</th>
+            <th>Min °C</th>
+            <th>Max °C</th>
+            <th>Warn ±°C</th>
+          </tr>
+        </thead>
+        <tbody id="alarmTableBody"></tbody>
+      </table>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px;">* Warn = ระยะห่างจาก Max/Min ที่แสดงสีเหลือง "เฝ้าระวัง" (ยังไม่ส่ง Email)</div>
+  </div>
+
+  <!-- SUMMARY -->
+  <div class="summary-row">
+    <div class="sum-card"><div class="sum-label">ห้องทั้งหมด</div><div class="sum-val" style="color:var(--blue)" id="sumTotal">7</div><div class="sum-sub">Cold Rooms</div></div>
+    <div class="sum-card"><div class="sum-label">ปกติ</div><div class="sum-val" style="color:var(--green)" id="sumOk">--</div><div class="sum-sub">ห้อง</div></div>
+    <div class="sum-card"><div class="sum-label">เฝ้าระวัง</div><div class="sum-val" style="color:var(--amber)" id="sumWarn">--</div><div class="sum-sub">ห้อง</div></div>
+    <div class="sum-card"><div class="sum-label">แจ้งเตือน</div><div class="sum-val" style="color:var(--red)" id="sumAlarm">--</div><div class="sum-sub">ห้อง</div></div>
+    <div class="sum-card"><div class="sum-label">ออฟไลน์</div><div class="sum-val" style="color:var(--muted)" id="sumOff">7</div><div class="sum-sub">ห้อง</div></div>
+    <div class="sum-card"><div class="sum-label">Email ส่งแล้ว</div><div class="sum-val" style="color:var(--purple)" id="sumEmailSent">0</div><div class="sum-sub">วันนี้</div></div>
+  </div>
+
+  <div class="section-title">สถานะห้องเย็น</div>
+  <div class="rooms-grid" id="roomsGrid"></div>
+
+  <div class="bottom-grid">
+    <div class="panel">
+      <div class="section-title" style="margin:0 0 4px;">กราฟอุณหภูมิ Real-time</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--muted);" id="chartLegend"></div>
+      <div class="chart-wrap"><canvas id="tempChart"></canvas></div>
+    </div>
+    <div class="panel">
+      <div class="section-title" style="margin:0 0 6px;">บันทึกเหตุการณ์</div>
+      <div class="log-list" id="logList">
+        <div style="font-size:12px;color:var(--muted);padding:8px 0;">รอข้อมูลจากเซ็นเซอร์...</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// CONFIG — โหลดจาก localStorage ถ้ามี
+// ============================================================
+const DEFAULT_ROOMS = [
+  { id:'A', name:'ห้องเย็น A',    zone:'Zone 1', target:-18, min:-20, max:-15, warnOffset:1   },
+  { id:'B', name:'ห้องเย็น B',    zone:'Zone 1', target:-18, min:-20, max:-15, warnOffset:1   },
+  { id:'C', name:'ห้องแช่เย็น C', zone:'Zone 2', target:2,   min:0,   max:5,   warnOffset:0.5 },
+  { id:'D', name:'ห้องแช่เย็น D', zone:'Zone 2', target:2,   min:0,   max:5,   warnOffset:0.5 },
+  { id:'E', name:'ห้องเย็น E',    zone:'Zone 3', target:-20, min:-22, max:-17, warnOffset:1   },
+  { id:'F', name:'ห้องแช่แข็ง F', zone:'Zone 3', target:-25, min:-28, max:-22, warnOffset:1   },
+  { id:'G', name:'ห้องแช่แข็ง G', zone:'Zone 3', target:-25, min:-28, max:-22, warnOffset:1   },
+];
+
+let ROOMS_CONFIG  = JSON.parse(localStorage.getItem('roomsConfig')  || 'null') || DEFAULT_ROOMS;
+let cooldownMs    = (parseInt(localStorage.getItem('cooldownMin')    || '5'))   * 60000;
+let emailSentToday = 0;
+
+const ROOM_COLORS = {A:'#58a6ff',B:'#f85149',C:'#3fb950',D:'#d29922',E:'#bc8cff',F:'#39d0d8',G:'#fb8f44'};
+const roomState   = {};
+ROOMS_CONFIG.forEach(r => { roomState[r.id] = null; });
+
+let soundEnabled  = true;
+let alarmCooldown = {};
+
+// ============================================================
+// CLOCK
+// ============================================================
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clockDisplay').textContent =
+    now.toLocaleDateString('th-TH') + ' ' +
+    now.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+setInterval(updateClock, 1000); updateClock();
+
+// ============================================================
+// PANELS
+// ============================================================
+function showPanel(name) {
+  ['emailPanel','alarmPanel'].forEach(id => document.getElementById(id).style.display = 'none');
+  if (name === 'email') document.getElementById('emailPanel').style.display = 'block';
+  if (name === 'alarm') { document.getElementById('alarmPanel').style.display = 'block'; renderAlarmTable(); }
+}
+
+// ============================================================
+// ALARM SETTINGS TABLE
+// ============================================================
+function renderAlarmTable() {
+  document.getElementById('cooldownMin').value = Math.round(cooldownMs / 60000);
+  document.getElementById('alarmTableBody').innerHTML = ROOMS_CONFIG.map((r, i) => `
+    <tr>
+      <td style="font-weight:600;color:var(--blue);">${r.id}</td>
+      <td><input type="text"   value="${r.name}"       onchange="ROOMS_CONFIG[${i}].name=this.value;rebuildCards();" /></td>
+      <td><input type="text"   value="${r.zone}"       style="width:70px;" onchange="ROOMS_CONFIG[${i}].zone=this.value;" /></td>
+      <td><input type="number" value="${r.target}"     step="0.5" onchange="ROOMS_CONFIG[${i}].target=parseFloat(this.value);" /></td>
+      <td><input type="number" value="${r.min}"        step="0.5" onchange="ROOMS_CONFIG[${i}].min=parseFloat(this.value);" /></td>
+      <td><input type="number" value="${r.max}"        step="0.5" onchange="ROOMS_CONFIG[${i}].max=parseFloat(this.value);" /></td>
+      <td><input type="number" value="${r.warnOffset}" step="0.1" style="width:55px;" onchange="ROOMS_CONFIG[${i}].warnOffset=parseFloat(this.value);" /></td>
+    </tr>`).join('');
+}
+
+function saveAlarmSettings() {
+  const m = parseInt(document.getElementById('cooldownMin').value) || 5;
+  cooldownMs = m * 60000;
+  localStorage.setItem('cooldownMin', m);
+  localStorage.setItem('roomsConfig', JSON.stringify(ROOMS_CONFIG));
+  alarmCooldown = {};
+  showPanel(null);
+  addLog('บันทึกการตั้งค่า Alarm เรียบร้อย', 'green');
+}
+
+function rebuildCards() {
+  buildCards();
+  document.getElementById('sumTotal').textContent = ROOMS_CONFIG.length;
+  ROOMS_CONFIG.forEach(r => { if (roomState[r.id]) updateCard(r.id, roomState[r.id]); });
+}
+
+// ============================================================
+// BUILD ROOM CARDS
+// ============================================================
+function buildCards() {
+  const grid = document.getElementById('roomsGrid');
+  grid.innerHTML = '';
+  ROOMS_CONFIG.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'room-card'; card.id = 'card-' + r.id;
+    card.innerHTML = `
+      <div class="room-header">
+        <div>
+          <div class="room-name" id="rname-${r.id}">${r.name}</div>
+          <div class="room-zone" id="rzone-${r.id}">${r.zone} · เป้าหมาย ${r.target}°C</div>
+        </div>
+        <div class="status-chip chip-off" id="chip-${r.id}">ออฟไลน์</div>
+      </div>
+      <div class="metrics">
+        <div class="metric-box">
+          <div class="metric-label">อุณหภูมิ</div>
+          <div class="metric-value val-cold" id="temp-${r.id}">--<span class="metric-unit">°C</span></div>
+          <div class="metric-hint" id="hint-${r.id}">Min ${r.min} / Max ${r.max}°C</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">ความชื้น</div>
+          <div class="metric-value" id="hum-${r.id}">--<span class="metric-unit">%RH</span></div>
+          <div class="metric-hint">Relative Humidity</div>
+        </div>
+      </div>
+      <div class="door-row">
+        <span>ประตู: <span class="door-status door-closed" id="door-${r.id}">ไม่ทราบ</span></span>
+        <span class="ts-label" id="ts-${r.id}">ออฟไลน์</span>
+      </div>
+      <div id="alarms-${r.id}" style="display:flex;flex-wrap:wrap;gap:3px;min-height:0;"></div>`;
+    grid.appendChild(card);
+  });
+}
+
+// ============================================================
+// UPDATE CARD
+// ============================================================
+function updateCard(id, data) {
+  const cfg = ROOMS_CONFIG.find(r => r.id === id);
+  if (!cfg) return;
+  const prev = roomState[id] ? {...roomState[id]} : null;
+  roomState[id] = data;
+
+  const t = data.temp;
+  let status = 'ok';
+  if      (t > cfg.max || t < cfg.min)                                         status = 'alarm';
+  else if (t > cfg.max - cfg.warnOffset || t < cfg.min + cfg.warnOffset)       status = 'warn';
+
+  const card = document.getElementById('card-' + id);
+  if (!card) return;
+  card.className = 'room-card' + (status==='alarm'?' alarm':status==='warn'?' warn':'');
+
+  const chipMap = {ok:['chip-ok','ปกติ'],warn:['chip-warn','เฝ้าระวัง'],alarm:['chip-err','แจ้งเตือน!']};
+  const chipEl  = document.getElementById('chip-'+id);
+  chipEl.className  = 'status-chip ' + chipMap[status][0];
+  chipEl.textContent = chipMap[status][1];
+
+  const tc = t < 0 ? 'val-cold' : (status==='alarm'?'val-err':status==='warn'?'val-warn':'val-ok');
+  document.getElementById('temp-'+id).className  = 'metric-value ' + tc;
+  document.getElementById('temp-'+id).innerHTML  = t.toFixed(1) + '<span class="metric-unit">°C</span>';
+  document.getElementById('hum-'+id).innerHTML   = Math.round(data.hum) + '<span class="metric-unit">%RH</span>';
+  document.getElementById('hint-'+id).textContent = `Min ${cfg.min} / Max ${cfg.max}°C`;
+  document.getElementById('rname-'+id).textContent = cfg.name;
+  document.getElementById('rzone-'+id).textContent = `${cfg.zone} · เป้าหมาย ${cfg.target}°C`;
+
+  const doorEl = document.getElementById('door-'+id);
+  doorEl.textContent = data.door === 'open' ? 'เปิดอยู่ ⚠' : 'ปิด';
+  doorEl.className   = 'door-status ' + (data.door==='open'?'door-open':'door-closed');
+
+  const now = new Date();
+  document.getElementById('ts-'+id).textContent =
+    now.getHours().toString().padStart(2,'0')+':'+
+    now.getMinutes().toString().padStart(2,'0')+':'+
+    now.getSeconds().toString().padStart(2,'0');
+
+  checkAlarms(id, data, prev, cfg);
+  updateChart(id, t);
+  updateSummary();
+  updateAlarmBanner();
+}
+
+// ============================================================
+// CHECK ALARMS
+// ============================================================
+function checkAlarms(id, data, prev, cfg) {
+  const box = document.getElementById('alarms-'+id);
+  box.innerHTML = '';
+
+  if (data.temp > cfg.max) {
+    box.innerHTML += `<span class="alarm-badge abadge-temp">🌡 อุณหภูมิสูงเกิน</span>`;
+    triggerAlarm(id, 'temp_high',
+      `อุณหภูมิสูงเกิน ${data.temp.toFixed(1)}°C (ค่าสูงสุด ${cfg.max}°C)`,
+      'อุณหภูมิสูงเกิน', data.temp, cfg);
+  }
+  if (data.temp < cfg.min) {
+    box.innerHTML += `<span class="alarm-badge abadge-low">❄ อุณหภูมิต่ำเกิน</span>`;
+    triggerAlarm(id, 'temp_low',
+      `อุณหภูมิต่ำเกิน ${data.temp.toFixed(1)}°C (ค่าต่ำสุด ${cfg.min}°C)`,
+      'อุณหภูมิต่ำเกิน', data.temp, cfg);
+  }
+  if (data.door === 'open') {
+    box.innerHTML += `<span class="alarm-badge abadge-door">🚪 ประตูเปิดอยู่</span>`;
+    triggerAlarm(id, 'door_open', 'ประตูเปิดอยู่', 'ประตูเปิด', data.temp, cfg);
+  }
+  if (prev && prev.door !== data.door) {
+    const msg = data.door==='open' ? `${cfg.name}: ประตูถูกเปิด` : `${cfg.name}: ประตูปิดแล้ว`;
+    addLog(msg, data.door==='open'?'amber':'green');
+  }
+}
+
+function triggerAlarm(roomId, type, message, alarmType, temp, cfg) {
+  const key = roomId + '_' + type;
+  const now = Date.now();
+  if (alarmCooldown[key] && now - alarmCooldown[key] < cooldownMs) return;
+  alarmCooldown[key] = now;
+
+  addLog('⚠ ' + cfg.name + ': ' + message, type.includes('temp')&&temp>cfg.max?'red':type.includes('low')?'purple':'amber');
+  playAlarmSound();
+  sendEmail(cfg.name, alarmType, message, temp, cfg);
+}
+
+// ============================================================
+// SUMMARY
+// ============================================================
+function updateSummary() {
+  let ok=0,warn=0,alarm=0,off=0;
+  ROOMS_CONFIG.forEach(r => {
+    if (!roomState[r.id]) { off++; return; }
+    const t = roomState[r.id].temp;
+    if (t > r.max || t < r.min) alarm++;
+    else if (t > r.max - r.warnOffset || t < r.min + r.warnOffset) warn++;
+    else ok++;
+  });
+  document.getElementById('sumOk').textContent    = ok;
+  document.getElementById('sumWarn').textContent  = warn;
+  document.getElementById('sumAlarm').textContent = alarm;
+  document.getElementById('sumOff').textContent   = off;
+}
+
+function updateAlarmBanner() {
+  let n = 0;
+  ROOMS_CONFIG.forEach(r => {
+    const d = roomState[r.id];
+    if (d && (d.temp > r.max || d.temp < r.min || d.door === 'open')) n++;
+  });
+  document.getElementById('alarmCount').textContent = n;
+  document.getElementById('alarmBanner').classList.toggle('show', n > 0);
+}
+
+function dismissAlarms() {
+  document.getElementById('alarmBanner').classList.remove('show');
+  alarmCooldown = {};
+}
+
+// ============================================================
+// SOUND
+// ============================================================
+let audioCtx = null;
+function playAlarmSound() {
+  if (!soundEnabled) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    [880,660,880,660].forEach((freq, i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination);
+      o.frequency.value = freq; o.type = 'square';
+      g.gain.setValueAtTime(0.3, audioCtx.currentTime + i*.15);
+      g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + i*.15+.12);
+      o.start(audioCtx.currentTime + i*.15);
+      o.stop(audioCtx.currentTime  + i*.15+.12);
+    });
+    const ind = document.getElementById('soundIndicator');
+    ind.classList.add('show');
+    setTimeout(() => ind.classList.remove('show'), 2000);
+  } catch(e) {}
+}
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  document.getElementById('soundBtn').textContent = soundEnabled ? '🔔 เสียงเปิด' : '🔕 เสียงปิด';
+}
+
+// ============================================================
+// EMAIL — EmailJS (เรียกตรงจาก browser ไม่ต้อง server)
+// ============================================================
+let emailRecipients = JSON.parse(localStorage.getItem('emailRecipients') || '[]');
+let ejInitialized   = false;
+
+function getEmailSettings() {
+  return {
+    serviceId:  document.getElementById('ejServiceId').value.trim(),
+    templateId: document.getElementById('ejTemplateId').value.trim(),
+    publicKey:  document.getElementById('ejPublicKey').value.trim(),
+  };
+}
+
+function saveEmailSettings() {
+  const s = getEmailSettings();
+  localStorage.setItem('ejServiceId',  s.serviceId);
+  localStorage.setItem('ejTemplateId', s.templateId);
+  localStorage.setItem('ejPublicKey',  s.publicKey);
+  updateEmailStatus();
+}
+
+function updateEmailStatus() {
+  const s   = getEmailSettings();
+  const ok  = s.serviceId && s.templateId && s.publicKey && emailRecipients.length > 0;
+  const el  = document.getElementById('emailStatus');
+  el.className   = ok ? 'status-pill pill-ok' : 'status-pill pill-no';
+  el.textContent = ok ? `Email: ${emailRecipients.length} ผู้รับ ✓` : 'Email: ยังไม่ตั้งค่า';
+  if (s.publicKey && !ejInitialized) {
+    try { emailjs.init(s.publicKey); ejInitialized = true; } catch(e) {}
+  }
+}
+
+async function sendEmail(roomName, alarmType, message, temperature, cfg) {
+  const s = getEmailSettings();
+  if (!s.serviceId || !s.templateId || !s.publicKey || emailRecipients.length === 0) return;
+
+  if (!ejInitialized) {
+    try { emailjs.init(s.publicKey); ejInitialized = true; } catch(e) { return; }
+  }
+
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const params = {
+    room_name:   roomName,
+    alarm_type:  alarmType,
+    message:     message,
+    temperature: temperature.toFixed(1),
+    min_temp:    cfg.min,
+    max_temp:    cfg.max,
+    time:        timeStr,
+  };
+
+  for (const r of emailRecipients) {
+    try {
+      await emailjs.send(s.serviceId, s.templateId, { ...params, to_email: r.email, to_name: r.name });
+      emailSentToday++;
+      document.getElementById('sumEmailSent').textContent = emailSentToday;
+      addLog(`📧 ส่ง Email ถึง ${r.name} (${r.email})`, 'green');
+    } catch(e) {
+      addLog(`📧 ส่ง Email ถึง ${r.name} ไม่สำเร็จ: ${e.text||e.message||'error'}`, 'red');
+    }
+  }
+}
+
+async function testEmail() {
+  const s = getEmailSettings();
+  if (!s.serviceId || !s.templateId || !s.publicKey) { alert('กรุณาใส่ Service ID, Template ID และ Public Key ก่อนครับ'); return; }
+  if (emailRecipients.length === 0) { alert('กรุณาเพิ่มผู้รับอย่างน้อย 1 รายการก่อนครับ'); return; }
+  if (!ejInitialized) { try { emailjs.init(s.publicKey); ejInitialized = true; } catch(e) { alert('Public Key ไม่ถูกต้อง'); return; } }
+
+  const testCfg = { min: -20, max: -15 };
+  await sendEmail('ห้องเย็น A (ทดสอบ)', 'ทดสอบระบบ', 'นี่คือการทดสอบการแจ้งเตือน Cold Room Monitor', -18, testCfg);
+  alert('ส่ง Email ทดสอบแล้วครับ! เช็ค inbox ของผู้รับทุกคนได้เลย (อาจใช้เวลา 1-2 นาที)');
+}
+
+// Recipients management
+function renderRecipients() {
+  const list = document.getElementById('recipientsList');
+  document.getElementById('recipientCount').textContent = emailRecipients.length + ' รายการ';
+  list.innerHTML = emailRecipients.length === 0
+    ? '<div style="font-size:12px;color:var(--muted);padding:4px 0;">ยังไม่มีผู้รับ — เพิ่มด้านล่างได้เลย</div>'
+    : emailRecipients.map((r,i) => `
+      <div class="recipient-row">
+        <input class="inp-rname" value="${r.name}"  onchange="emailRecipients[${i}].name=this.value;saveR();" />
+        <input class="inp-email" value="${r.email}" onchange="emailRecipients[${i}].email=this.value;saveR();" type="email" />
+        <button class="btn btn-green" style="padding:3px 9px;font-size:11px;" onclick="testSingleEmail(${i})">ทดสอบ</button>
+        <button class="btn-icon" onclick="emailRecipients.splice(${i},1);saveR();renderRecipients();">✕</button>
+      </div>`).join('');
+}
+
+async function testSingleEmail(i) {
+  const s = getEmailSettings();
+  if (!s.serviceId||!s.templateId||!s.publicKey) { alert('กรุณาใส่ EmailJS Keys ก่อนครับ'); return; }
+  if (!ejInitialized) { try { emailjs.init(s.publicKey); ejInitialized = true; } catch(e) { alert('Public Key ไม่ถูกต้อง'); return; } }
+  const r = emailRecipients[i];
+  try {
+    await emailjs.send(s.serviceId, s.templateId, {
+      to_email: r.email, to_name: r.name,
+      room_name:'ห้องเย็น A (ทดสอบ)', alarm_type:'ทดสอบ',
+      message:'ทดสอบส่ง Email แจ้งเตือน Cold Room Monitor',
+      temperature:'-18.0', min_temp:'-20', max_temp:'-15',
+      time: new Date().toLocaleTimeString('th-TH'),
+    });
+    alert(`ส่งถึง ${r.name} (${r.email}) สำเร็จแล้วครับ!`);
+  } catch(e) { alert('ส่งไม่สำเร็จ: ' + (e.text||e.message||'ตรวจสอบ Keys อีกครั้ง')); }
+}
+
+function addRecipient() {
+  const name  = document.getElementById('newName').value.trim();
+  const email = document.getElementById('newEmail').value.trim();
+  if (!email) { alert('กรุณาใส่ Email'); return; }
+  emailRecipients.push({ name: name || email, email });
+  document.getElementById('newName').value  = '';
+  document.getElementById('newEmail').value = '';
+  saveR(); renderRecipients();
+}
+
+function saveR() {
+  localStorage.setItem('emailRecipients', JSON.stringify(emailRecipients));
+  updateEmailStatus();
+}
+
+// ============================================================
+// CHART
+// ============================================================
+const chartLabels = [], chartDatasets = {};
+let chart;
+
+function initChart() {
+  const legend = document.getElementById('chartLegend');
+  const datasets = ROOMS_CONFIG.map(r => {
+    chartDatasets[r.id] = [];
+    legend.innerHTML += `<span style="display:flex;align-items:center;gap:3px;"><span style="width:9px;height:9px;border-radius:2px;background:${ROOM_COLORS[r.id]};display:inline-block;"></span>${r.name}</span>`;
+    return { label:r.name, data:chartDatasets[r.id], borderColor:ROOM_COLORS[r.id], borderWidth:1.5, pointRadius:0, tension:0.3, fill:false };
+  });
+  chart = new Chart(document.getElementById('tempChart'), {
+    type:'line',
+    data:{ labels:chartLabels, datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false,
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ ticks:{color:'#7d8590',font:{size:9},maxTicksLimit:8}, grid:{color:'rgba(255,255,255,.05)'} },
+        y:{ ticks:{color:'#7d8590',font:{size:9},callback:v=>v+'°'}, grid:{color:'rgba(255,255,255,.05)'} }
+      }
+    }
+  });
+}
+
+function updateChart(id, temp) {
+  const now = new Date();
+  const label = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+  if (chartLabels[chartLabels.length-1] !== label) {
+    chartLabels.push(label);
+    if (chartLabels.length > 60) chartLabels.shift();
+    ROOMS_CONFIG.forEach(r => { if (chartDatasets[r.id]?.length >= 60) chartDatasets[r.id].shift(); });
+  }
+  const idx = chartLabels.length - 1;
+  if (chartDatasets[id]) {
+    while (chartDatasets[id].length <= idx) chartDatasets[id].push(null);
+    chartDatasets[id][idx] = temp;
+  }
+  chart.update('quiet');
+}
+
+// ============================================================
+// EVENT LOG
+// ============================================================
+function addLog(msg, color) {
+  const c = {red:'#f85149',amber:'#d29922',green:'#3fb950',purple:'#bc8cff',gray:'#7d8590'}[color]||'#7d8590';
+  const list = document.getElementById('logList');
+  if (list.children[0]?.textContent.includes('รอข้อมูล')) list.innerHTML = '';
+  const now = new Date();
+  const t   = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+  const item = document.createElement('div');
+  item.className = 'log-item';
+  item.innerHTML = `<div class="log-dot" style="background:${c}"></div><div class="log-msg">${msg}</div><div class="log-time">${t}</div>`;
+  list.insertBefore(item, list.firstChild);
+  if (list.children.length > 60) list.removeChild(list.lastChild);
+}
+
+// ============================================================
+// MQTT
+// ============================================================
+let mqttClient = null;
+function reconnect() {
+  if (mqttClient) mqttClient.end(true);
+  const broker = document.getElementById('brokerInput').value.trim() || 'broker.hivemq.com';
+  setConnStatus('connecting');
+  addLog('กำลังเชื่อมต่อ ' + broker + '...', 'gray');
+  mqttClient = mqtt.connect(`wss://${broker}:8884/mqtt`, {
+    clientId:'coldroom-'+Math.random().toString(16).slice(2,8),
+    clean:true, reconnectPeriod:5000, connectTimeout:10000
+  });
+  mqttClient.on('connect', () => {
+    setConnStatus('connected');
+    addLog('เชื่อมต่อ MQTT สำเร็จ', 'green');
+    ROOMS_CONFIG.forEach(r => mqttClient.subscribe('coldroom/'+r.id+'/sensor'));
+  });
+  mqttClient.on('message', (topic, msg) => {
+    try {
+      const data = JSON.parse(msg.toString());
+      const id   = data.room || topic.split('/')[1];
+      if (id in roomState) updateCard(id, data);
+    } catch(e) {}
+  });
+  mqttClient.on('error',  err => { setConnStatus('error'); addLog('เชื่อมต่อไม่ได้: '+err.message,'red'); });
+  mqttClient.on('close',  ()  => setConnStatus('connecting'));
+}
+function setConnStatus(s) {
+  const m = {connecting:['dot-connecting','กำลังเชื่อมต่อ...'],connected:['dot-connected','เชื่อมต่อแล้ว'],error:['dot-error','เชื่อมต่อไม่ได้']};
+  document.getElementById('connDot').className   = 'conn-dot '+m[s][0];
+  document.getElementById('connText').textContent = m[s][1];
+}
+
+// ============================================================
+// INIT
+// ============================================================
+buildCards();
+initChart();
+updateSummary();
+
+// โหลดค่าที่บันทึกไว้
+const saved = { serviceId:'ejServiceId', templateId:'ejTemplateId', publicKey:'ejPublicKey' };
+Object.entries(saved).forEach(([k,id]) => {
+  const v = localStorage.getItem('ej'+k.charAt(0).toUpperCase()+k.slice(1));
+  if (v) document.getElementById(id).value = v;
+});
+renderRecipients();
+updateEmailStatus();
+reconnect();
+</script>
+</body>
+</html>
