@@ -335,13 +335,13 @@ details summary::-webkit-details-marker{display:none;}
 // CONFIG — โหลดจาก localStorage ถ้ามี
 // ============================================================
 const DEFAULT_ROOMS = [
-  { id:'A', name:'ห้องเย็น A',    zone:'Zone 1', target:-18, min:-20, max:-15, warnOffset:1   },
-  { id:'B', name:'ห้องเย็น B',    zone:'Zone 1', target:-18, min:-20, max:-15, warnOffset:1   },
-  { id:'2', name:'ห้องแช่เย็น 2', zone:'Zone 2', target:2,   min:0,   max:5,   warnOffset:0.5 },
-  { id:'5', name:'ห้องแช่เย็น 5', zone:'Zone 2', target:2,   min:0,   max:5,   warnOffset:0.5 },
-  { id:'6', name:'ห้องเย็น 6',    zone:'Zone 3', target:-20, min:-22, max:-17, warnOffset:1   },
-  { id:'7', name:'ห้องแช่แข็ง 7', zone:'Zone 3', target:-25, min:-28, max:-22, warnOffset:1   },
-  { id:'8', name:'ห้องแช่แข็ง 8', zone:'Zone 3', target:-25, min:-28, max:-22, warnOffset:1   },
+  { id:'A', name:'ห้องเย็น A',    zone:'Zone 1', target:-35, min:-20, max:-38, warnOffset:1   },
+  { id:'B', name:'ห้องเย็น B',    zone:'Zone 1', target:-35, min:-20, max:-38, warnOffset:1   },
+  { id:'C', name:'ห้องแช่เย็น 2', zone:'Zone 2', target:-25,   min:-20, max:-30,   warnOffset:0.5 },
+  { id:'D', name:'ห้องแช่เย็น 5', zone:'Zone 2', target:-25,   min:-20, max:-30,   warnOffset:0.5 },
+  { id:'E', name:'ห้องเย็น 6',    zone:'Zone 3', target:-25, min:-20, max:-30, warnOffset:1   },
+  { id:'F', name:'ห้องแช่แข็ง 7', zone:'Zone 3', target:-25, min:-20, max:-30, warnOffset:1   },
+  { id:'G', name:'ห้องแช่แข็ง 8', zone:'Zone 3', target:-25, min:-20, max:-30, warnOffset:1   },
 ];
 
 let ROOMS_CONFIG  = JSON.parse(localStorage.getItem('roomsConfig')  || 'null') || DEFAULT_ROOMS;
