@@ -344,7 +344,8 @@ const DEFAULT_ROOMS = [
   { id:'G', name:'ห้องแช่แข็ง 8', zone:'Zone 3', target:-25, min:-20, max:-30, warnOffset:1   },
 ];
 
-let ROOMS_CONFIG  = JSON.parse(localStorage.getItem('roomsConfig')  || 'null') || DEFAULT_ROOMS;
+// เปลี่ยนชื่อเป็น 'roomsConfig_v2'
+let ROOMS_CONFIG = JSON.parse(localStorage.getItem('roomsConfig_v2') || 'null') || DEFAULT_ROOMS;
 let cooldownMs    = (parseInt(localStorage.getItem('cooldownMin')    || '5'))   * 60000;
 let emailSentToday = 0;
 
