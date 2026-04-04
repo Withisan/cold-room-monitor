@@ -597,9 +597,10 @@ async function initFirebase(showAlert=false) {
       document.getElementById('pwLoggedIn').style.display      = isAdmin ? '' : 'none';
       if (isAdmin && user.email) document.getElementById('adminEmailDisplay').textContent = user.email;
     });
-    setFbStatus(true, 'Firebase เชื่อมต่อสำเร็จ');
+    setFbStatus(true, 'Firebase เชื่อมต่อสำเร็จ — Realtime sync เปิดอยู่');
     await loadSettingsFromFirebase();
-    if (showAlert) { alert('เชื่อมต่อ Firebase สำเร็จแล้วครับ!'); }
+    startSettingsListener(); // เริ่ม realtime listener
+    if (showAlert) { alert('เชื่อมต่อ Firebase สำเร็จแล้วครับ! Realtime sync เปิดอยู่'); }
   } catch(e) {
     setFbStatus(false, 'Firebase error: ' + e.message);
     if (showAlert) alert('เชื่อมต่อไม่สำเร็จ: ' + e.message);
@@ -621,21 +622,51 @@ async function loadSettingsFromFirebase() {
   const { doc, getDoc } = window._fbModules;
   try {
     const snap = await getDoc(doc(db, 'settings', 'config'));
-    if (snap.exists()) {
-      const d = snap.data();
-      if (d.roomsConfig)    { ROOMS_CONFIG = d.roomsConfig; localStorage.setItem('roomsConfig', JSON.stringify(ROOMS_CONFIG)); }
-      if (d.cooldownMin)    { cooldownMs   = d.cooldownMin * 60000; }
-      if (d.defrostMaxMin)  { defrostMaxMs = d.defrostMaxMin * 60000; }
-      if (d.emailRecipients){ emailRecipients = d.emailRecipients; localStorage.setItem('emailRecipients', JSON.stringify(emailRecipients)); }
-      if (d.ejServiceId)    { document.getElementById('ejServiceId').value  = d.ejServiceId;  localStorage.setItem('ejServiceId', d.ejServiceId); }
-      if (d.ejTemplateId)   { document.getElementById('ejTemplateId').value = d.ejTemplateId; localStorage.setItem('ejTemplateId', d.ejTemplateId); }
-      if (d.ejPublicKey)    { document.getElementById('ejPublicKey').value  = d.ejPublicKey;  localStorage.setItem('ejPublicKey', d.ejPublicKey); }
-      rebuildCards();
-      renderRecipients();
-      updateEmailStatus();
-      addLog('โหลดการตั้งค่าจาก Firebase สำเร็จ', 'green');
-    }
+    if (snap.exists()) applySettings(snap.data());
   } catch(e) { addLog('โหลด Firebase settings error: '+e.message, 'red'); }
+}
+
+// ============================================================
+// onSnapshot — sync การตั้งค่าแบบ Realtime ทุกเครื่อง
+// ============================================================
+let settingsUnsubscribe = null;
+
+function startSettingsListener() {
+  if (!db) return;
+  if (settingsUnsubscribe) settingsUnsubscribe(); // หยุด listener เก่าก่อน
+  const { doc, onSnapshot } = window._fbModules;
+  settingsUnsubscribe = onSnapshot(
+    doc(db, 'settings', 'config'),
+    (snap) => {
+      if (!snap.exists()) return;
+      applySettings(snap.data());
+      addLog('🔄 การตั้งค่าถูกอัปเดตแบบ Realtime', 'teal');
+    },
+    (err) => { addLog('onSnapshot error: '+err.message, 'red'); }
+  );
+  addLog('🔥 เชื่อมต่อ Firebase Realtime sync สำเร็จ', 'green');
+}
+
+function applySettings(d) {
+  if (!d) return;
+  let changed = false;
+  if (d.roomsConfig) {
+    ROOMS_CONFIG = d.roomsConfig;
+    localStorage.setItem('roomsConfig', JSON.stringify(ROOMS_CONFIG));
+    changed = true;
+  }
+  if (d.cooldownMin)   cooldownMs   = d.cooldownMin * 60000;
+  if (d.defrostMaxMin) defrostMaxMs = d.defrostMaxMin * 60000;
+  if (d.emailRecipients) {
+    emailRecipients = d.emailRecipients;
+    localStorage.setItem('emailRecipients', JSON.stringify(emailRecipients));
+    renderRecipients();
+  }
+  if (d.ejServiceId)  { document.getElementById('ejServiceId').value  = d.ejServiceId;  localStorage.setItem('ejServiceId', d.ejServiceId); }
+  if (d.ejTemplateId) { document.getElementById('ejTemplateId').value = d.ejTemplateId; localStorage.setItem('ejTemplateId', d.ejTemplateId); }
+  if (d.ejPublicKey)  { document.getElementById('ejPublicKey').value  = d.ejPublicKey;  localStorage.setItem('ejPublicKey', d.ejPublicKey); }
+  updateEmailStatus();
+  if (changed) rebuildCards();
 }
 
 async function saveSettingsToFirebase() {
@@ -677,6 +708,14 @@ async function maybeSaveToFirebase(id, data) {
 // ============================================================
 // FIREBASE AUTH
 // ============================================================
+async function adminLogout() {
+  if (!auth) return;
+  const { signOut } = window._fbModules;
+  await signOut(auth);
+  isAdmin = false;
+  addLog('Admin ออกจากระบบแล้ว', 'amber');
+}
+
 async function firebaseLogin() {
   if (!auth) { alert('กรุณาตั้งค่า Firebase ในแท็บ Firebase ก่อนครับ'); return; }
   const email = document.getElementById('adminEmail').value.trim();
@@ -686,17 +725,10 @@ async function firebaseLogin() {
     await signInWithEmailAndPassword(auth, email, pw);
     document.getElementById('loginError').textContent = '';
     await loadSettingsFromFirebase();
+    startSettingsListener();
   } catch(e) {
     document.getElementById('loginError').textContent = 'Login ไม่สำเร็จ: ' + (e.code === 'auth/invalid-credential' ? 'Email หรือ Password ไม่ถูกต้อง' : e.message);
   }
-}
-
-async function adminLogout() {
-  if (!auth) return;
-  const { signOut } = window._fbModules;
-  await signOut(auth);
-  isAdmin = false;
-  addLog('Admin ออกจากระบบแล้ว', 'amber');
 }
 
 // ============================================================
