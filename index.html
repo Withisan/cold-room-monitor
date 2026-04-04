@@ -1263,6 +1263,18 @@ setInterval(()=>{
 },30000);
 
 // ============================================================
+// FIREBASE CONFIG (hardcoded — เชื่อมต่ออัตโนมัติ)
+// ============================================================
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyA63q1O5-pNCa9_CIudlXoyXBaqIA4L2wA",
+  authDomain:        "smc-coldroom-system.firebaseapp.com",
+  projectId:         "smc-coldroom-system",
+  storageBucket:     "smc-coldroom-system.firebasestorage.app",
+  messagingSenderId: "664357319659",
+  appId:             "1:664357319659:web:7e79bc566171cc87931fae",
+};
+
+// ============================================================
 // INIT
 // ============================================================
 document.addEventListener('fbready', async () => {
@@ -1270,18 +1282,23 @@ document.addEventListener('fbready', async () => {
   initChart();
   updateSummary();
 
-  // โหลดค่าที่บันทึกไว้
+  // ใส่ค่า Firebase Config ลงใน form fields อัตโนมัติ
+  document.getElementById('fbApiKey').value            = FIREBASE_CONFIG.apiKey;
+  document.getElementById('fbAuthDomain').value        = FIREBASE_CONFIG.authDomain;
+  document.getElementById('fbProjectId').value         = FIREBASE_CONFIG.projectId;
+  document.getElementById('fbStorageBucket').value     = FIREBASE_CONFIG.storageBucket;
+  document.getElementById('fbMessagingSenderId').value = FIREBASE_CONFIG.messagingSenderId;
+  document.getElementById('fbAppId').value             = FIREBASE_CONFIG.appId;
+
+  // โหลดค่าอื่นๆ จาก localStorage
   ['ejServiceId','ejTemplateId','ejPublicKey'].forEach(k => { const v=localStorage.getItem(k); if(v) document.getElementById(k).value=v; });
-  ['fbApiKey','fbAuthDomain','fbProjectId','fbStorageBucket','fbMessagingSenderId','fbAppId'].forEach(k=>{ const v=localStorage.getItem(k); if(v) document.getElementById(k).value=v; });
   const savedDM=localStorage.getItem('defrostMaxMin'); if(savedDM) document.getElementById('defrostMaxMin').value=savedDM;
 
   renderRecipients();
   updateEmailStatus();
 
-  // auto-init Firebase ถ้ามีค่าบันทึกไว้
-  if (localStorage.getItem('fbApiKey') && localStorage.getItem('fbProjectId')) {
-    await initFirebase(false);
-  }
+  // เชื่อมต่อ Firebase อัตโนมัติทันที
+  await initFirebase(false);
 
   reconnect();
 });
