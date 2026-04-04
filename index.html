@@ -1,1290 +1,392 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cold Room Monitor v7</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script src="https://unpkg.com/@emailjs/browser@4/dist/email.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, doc, getDoc, setDoc, collection, addDoc, query, where, orderBy, limit, getDocs, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-window._fbModules = { initializeApp, getFirestore, doc, getDoc, setDoc, collection, addDoc, query, where, orderBy, limit, getDocs, onSnapshot, getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged };
-window._fbReady = true;
-document.dispatchEvent(new Event('fbready'));
-</script>
-<style>
-:root{
-  --bg:#0d1117;--surface:#161b22;--surface2:#1c2128;
-  --border:rgba(255,255,255,0.08);--text:#e6edf3;--muted:#7d8590;
-  --blue:#58a6ff;--green:#3fb950;--red:#f85149;--amber:#d29922;--purple:#bc8cff;--teal:#39d0d8;
-  --blue-bg:rgba(88,166,255,0.1);--green-bg:rgba(63,185,80,0.1);
-  --red-bg:rgba(248,81,73,0.1);--amber-bg:rgba(210,153,34,0.1);--purple-bg:rgba(188,140,255,0.1);
-}
-*{box-sizing:border-box;margin:0;padding:0;}
-body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;}
-
-/* TOPBAR */
-.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;position:sticky;top:0;z-index:30;}
-.logo{display:flex;align-items:center;gap:10px;}
-.logo-icon{width:30px;height:30px;background:var(--blue-bg);border:1px solid rgba(88,166,255,.3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;}
-.logo-text{font-size:14px;font-weight:600;}
-.logo-sub{font-size:10px;color:var(--muted);}
-.topbar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.conn-badge{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid var(--border);}
-.conn-dot{width:7px;height:7px;border-radius:50%;}
-.dot-connecting{background:var(--amber);animation:blink 1s infinite;}
-.dot-connected{background:var(--green);}
-.dot-error{background:var(--red);}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-
-/* ALARM BANNER */
-.alarm-banner{background:rgba(248,81,73,.12);border-bottom:1px solid rgba(248,81,73,.3);padding:8px 20px;font-size:13px;color:var(--red);display:none;align-items:center;gap:10px;}
-.alarm-banner.show{display:flex;}
-.alarm-dismiss{margin-left:auto;background:none;border:1px solid rgba(248,81,73,.4);color:var(--red);border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;}
-
-.main{padding:14px 20px;max-width:1400px;margin:0 auto;}
-.section-title{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px;}
-
-/* BUTTONS */
-.btn{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(88,166,255,.3);border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:500;white-space:nowrap;}
-.btn:hover{background:rgba(88,166,255,.2);}
-.btn-green{background:var(--green-bg);color:var(--green);border-color:rgba(63,185,80,.3);}
-.btn-green:hover{background:rgba(63,185,80,.2);}
-.btn-amber{background:var(--amber-bg);color:var(--amber);border-color:rgba(210,153,34,.3);}
-.btn-red{background:var(--red-bg);color:var(--red);border-color:rgba(248,81,73,.3);}
-.btn-icon{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:3px 6px;border-radius:4px;}
-.btn-icon:hover{color:var(--red);}
-.status-pill{font-size:11px;padding:3px 8px;border-radius:20px;}
-.pill-ok{background:var(--green-bg);color:var(--green);}
-.pill-no{background:var(--border);color:var(--muted);}
-.pill-warn{background:var(--amber-bg);color:var(--amber);}
-
-/* TOPBAR ACTIONS */
-.topbar-actions{display:flex;align-items:center;gap:6px;}
-
-/* SETTINGS MODAL OVERLAY */
-.modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;align-items:flex-start;justify-content:center;padding-top:40px;overflow-y:auto;}
-.modal-backdrop.open{display:flex;}
-.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;width:min(800px,95vw);max-height:85vh;overflow-y:auto;}
-.modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);z-index:1;}
-.modal-title{font-size:14px;font-weight:600;}
-.modal-body{padding:16px 18px;}
-
-/* TABS */
-.tabs{display:flex;gap:2px;background:var(--surface2);border-radius:8px;padding:3px;margin-bottom:16px;}
-.tab{flex:1;padding:6px 8px;font-size:12px;font-weight:500;color:var(--muted);border:none;background:none;cursor:pointer;border-radius:6px;text-align:center;transition:all .15s;}
-.tab.active{background:var(--surface);color:var(--text);}
-.tab-content{display:none;}
-.tab-content.active{display:block;}
-
-/* FORM ELEMENTS */
-.form-group{margin-bottom:12px;}
-.form-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;display:block;}
-.form-input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:13px;width:100%;}
-.form-input:focus{outline:none;border-color:var(--blue);}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-@media(max-width:560px){.form-grid{grid-template-columns:1fr;}}
-.form-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
-.form-row input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;}
-.form-row input:focus{outline:none;border-color:var(--blue);}
-
-/* FIREBASE STATUS */
-.fb-status-box{background:var(--surface2);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px;}
-.fb-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
-.fb-connected{background:var(--green);}
-.fb-disconnected{background:var(--red);}
-.fb-config-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-@media(max-width:560px){.fb-config-grid{grid-template-columns:1fr;}}
-
-/* PASSWORD PANEL */
-.pw-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:60;align-items:center;justify-content:center;}
-.pw-modal.open{display:flex;}
-.pw-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;width:min(360px,90vw);text-align:center;}
-.pw-title{font-size:15px;font-weight:600;margin-bottom:6px;}
-.pw-sub{font-size:12px;color:var(--muted);margin-bottom:16px;}
-.pw-input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 14px;font-size:14px;width:100%;text-align:center;letter-spacing:.1em;margin-bottom:10px;}
-.pw-input:focus{outline:none;border-color:var(--blue);}
-.pw-error{color:var(--red);font-size:12px;margin-bottom:8px;min-height:18px;}
-.admin-badge{background:rgba(210,153,34,.15);color:var(--amber);border:1px solid rgba(210,153,34,.3);border-radius:20px;font-size:11px;padding:3px 10px;}
-
-/* EMAIL */
-.key-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;}
-@media(max-width:600px){.key-grid{grid-template-columns:1fr;}}
-.key-box{background:var(--surface2);border-radius:8px;padding:10px;}
-.key-label{font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;}
-.key-box input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:12px;width:100%;}
-.recipients-list{display:flex;flex-direction:column;gap:5px;margin-bottom:8px;}
-.recipient-row{display:flex;align-items:center;gap:6px;}
-.recipient-row input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;}
-.inp-rname{width:110px;}
-.inp-email{flex:1;min-width:160px;}
-.add-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
-.add-row input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;}
-
-/* ALARM TABLE */
-.alarm-table{width:100%;border-collapse:collapse;font-size:12px;}
-.alarm-table th{text-align:left;padding:6px 8px;color:var(--muted);font-weight:500;font-size:11px;border-bottom:1px solid var(--border);}
-.alarm-table td{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,0.04);}
-.alarm-table tr:last-child td{border-bottom:none;}
-.alarm-table input[type=number]{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 5px;font-size:12px;width:60px;text-align:center;}
-.alarm-table input[type=text]{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:3px 6px;font-size:12px;width:110px;}
-.cooldown-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:12px;flex-wrap:wrap;}
-.cooldown-row input{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:12px;width:60px;text-align:center;}
-.info-box{background:var(--surface2);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);line-height:1.8;margin-bottom:10px;}
-.info-box b{color:var(--text);}
-
-/* SUMMARY */
-.summary-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:12px;}
-.sum-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
-.sum-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px;}
-.sum-val{font-size:24px;font-weight:600;line-height:1;}
-.sum-sub{font-size:10px;color:var(--muted);margin-top:2px;}
-
-/* ROOM CARDS */
-.rooms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;}
-.room-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;transition:border-color .2s;}
-.room-card.alarm{border-color:var(--red);box-shadow:0 0 0 1px rgba(248,81,73,.12);}
-.room-card.warn{border-color:var(--amber);}
-.room-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;}
-.room-name{font-size:13px;font-weight:600;}
-.room-zone{font-size:10px;color:var(--muted);margin-top:2px;}
-.status-chip{font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;}
-.chip-ok{background:var(--green-bg);color:var(--green);}
-.chip-warn{background:var(--amber-bg);color:var(--amber);}
-.chip-err{background:var(--red-bg);color:var(--red);}
-.chip-off{background:var(--border);color:var(--muted);}
-.metrics{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;}
-.metric-box{background:var(--surface2);border-radius:7px;padding:8px;}
-.metric-label{font-size:10px;color:var(--muted);margin-bottom:3px;}
-.metric-value{font-size:20px;font-weight:600;line-height:1;}
-.metric-unit{font-size:10px;font-weight:400;color:var(--muted);}
-.metric-hint{font-size:10px;color:var(--muted);margin-top:2px;}
-.val-cold{color:var(--blue);}
-.val-ok{color:var(--green);}
-.val-warn{color:var(--amber);}
-.val-err{color:var(--red);}
-.door-row{display:flex;align-items:center;justify-content:space-between;font-size:11px;padding-top:7px;border-top:1px solid var(--border);color:var(--muted);}
-.door-open{color:var(--amber);font-weight:600;}
-.door-closed{color:var(--green);}
-.ts-label{font-size:10px;color:var(--muted);}
-.equip-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);}
-.equip-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;transition:all .3s;}
-.comp-on{background:rgba(63,185,80,.15);color:#3fb950;border:1px solid rgba(63,185,80,.3);}
-.comp-off{background:var(--border);color:var(--muted);border:1px solid transparent;}
-.defrost-on{background:rgba(210,153,34,.15);color:#d29922;border:1px solid rgba(210,153,34,.4);animation:dpulse 1.4s ease-in-out infinite;}
-.defrost-off{background:var(--border);color:var(--muted);border:1px solid transparent;}
-@keyframes dpulse{0%,100%{opacity:1}50%{opacity:.55}}
-.alarm-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:2px 6px;border-radius:20px;margin-top:5px;}
-.abadge-door{background:var(--amber-bg);color:var(--amber);}
-.abadge-temp{background:var(--red-bg);color:var(--red);}
-.abadge-low{background:var(--purple-bg);color:var(--purple);}
-.abadge-defrost{background:rgba(210,153,34,.2);color:#d29922;}
-
-/* CHART SECTION */
-.chart-section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:12px;}
-.chart-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
-.time-btn{background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;font-weight:500;}
-.time-btn.active{background:var(--blue-bg);color:var(--blue);border-color:rgba(88,166,255,.3);}
-.chart-wrap{position:relative;width:100%;height:220px;}
-.chart-loading{display:flex;align-items:center;justify-content:center;height:220px;font-size:12px;color:var(--muted);}
-
-/* BOTTOM */
-.bottom-grid{display:grid;grid-template-columns:1fr 340px;gap:10px;margin-top:12px;}
-@media(max-width:900px){.bottom-grid{grid-template-columns:1fr;}}
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;}
-.log-list{display:flex;flex-direction:column;gap:4px;max-height:260px;overflow-y:auto;}
-.log-item{display:flex;gap:7px;align-items:flex-start;font-size:11px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);}
-.log-dot{width:6px;height:6px;border-radius:50%;margin-top:3px;flex-shrink:0;}
-.log-msg{flex:1;color:var(--text);}
-.log-time{color:var(--muted);font-size:10px;white-space:nowrap;}
-.sound-indicator{display:none;position:fixed;bottom:16px;right:16px;background:var(--red);color:#fff;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:600;z-index:100;}
-.sound-indicator.show{display:block;}
-details summary{cursor:pointer;font-size:11px;color:var(--blue);margin-top:8px;list-style:none;}
-details summary::-webkit-details-marker{display:none;}
-.hint-box{background:var(--surface2);border-radius:8px;padding:10px;font-size:11px;color:var(--muted);line-height:1.8;margin-top:6px;}
-.hint-box b{color:var(--text);}
-.hint-box code{background:var(--bg);padding:1px 5px;border-radius:3px;font-size:11px;color:var(--blue);}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cold Room Monitoring System v7</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <style>
+        :root {
+            --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9;
+            --blue: #58a6ff; --green: #3fb950; --red: #f85149; --amber: #d29922;
+            --purple: #bc8cff; --muted: #7d8590;
+        }
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: var(--bg); color: var(--text); margin: 0; padding: 15px; }
+        
+        /* Layout */
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; }
+        
+        /* Card Styling */
+        .room-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 15px; position: relative; transition: 0.3s; }
+        .room-card.alarm { border-color: var(--red); box-shadow: 0 0 10px rgba(248, 81, 73, 0.2); }
+        .room-card.warn { border-color: var(--amber); }
+        
+        .room-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+        .room-name { font-size: 1.2em; font-weight: bold; color: var(--blue); }
+        .room-zone { font-size: 0.8em; color: var(--muted); }
+        
+        .metrics { display: flex; gap: 10px; margin-bottom: 10px; }
+        .metric-box { flex: 1; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; text-align: center; }
+        .metric-label { font-size: 0.75em; color: var(--muted); margin-bottom: 4px; }
+        .metric-value { font-size: 1.6em; font-weight: bold; }
+        .metric-unit { font-size: 0.5em; margin-left: 2px; }
+        
+        /* Status Elements */
+        .status-chip { font-size: 0.7em; padding: 2px 8px; border-radius: 10px; font-weight: bold; }
+        .chip-ok { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+        .chip-err { background: rgba(248, 81, 73, 0.15); color: var(--red); animation: blink 1s infinite; }
+        .chip-off { background: var(--border); color: var(--muted); }
+        
+        .equip-badge { font-size: 0.75em; padding: 3px 6px; border-radius: 4px; background: #21262d; margin-right: 5px; }
+        .comp-on { color: var(--green); border-left: 3px solid var(--green); }
+        .defrost-on { color: var(--amber); border-left: 3px solid var(--amber); }
+        
+        /* Logs & Charts */
+        .side-panel { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; }
+        .log-container { background: var(--card); border: 1px solid var(--border); border-radius: 8px; height: 300px; display: flex; flex-direction: column; }
+        .log-header { padding: 10px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
+        .log-list { flex: 1; overflow-y: auto; padding: 10px; font-size: 0.85em; }
+        .log-item { display: flex; gap: 10px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .log-time { color: var(--muted); min-width: 65px; }
+        
+        .chart-container { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 15px; height: 350px; }
+        
+        @keyframes blink { 50% { opacity: 0.6; } }
+        .val-cold { color: #58a6ff; }
+        .val-ok { color: var(--green); }
+        .val-warn { color: var(--amber); }
+        .val-err { color: var(--red); }
+    </style>
 </head>
 <body>
 
-<div class="sound-indicator" id="soundIndicator">⚠ แจ้งเตือน!</div>
-
-<!-- PASSWORD MODAL -->
-<div class="pw-modal" id="pwModal">
-  <div class="pw-box">
-    <div class="pw-title">🔐 Admin Access</div>
-    <div class="pw-sub" id="pwSub">ใส่ Password เพื่อเข้าสู่การตั้งค่า</div>
-    <input type="password" class="pw-input" id="pwInput" placeholder="••••••••" maxlength="32" onkeydown="if(event.key==='Enter')verifyPassword()" />
-    <div class="pw-error" id="pwError"></div>
-    <div style="display:flex;gap:8px;justify-content:center;">
-      <button class="btn btn-green" onclick="verifyPassword()">เข้าสู่ระบบ</button>
-      <button class="btn" onclick="closePwModal()">ยกเลิก</button>
-    </div>
-  </div>
-</div>
-
-<div class="alarm-banner" id="alarmBanner">
-  <span style="font-size:15px;animation:blink .6s infinite;">⚠</span>
-  <span>มีการแจ้งเตือน: <b id="alarmCount">0</b> รายการ</span>
-  <button class="alarm-dismiss" onclick="dismissAlarms()">รับทราบ</button>
-</div>
-
-<div class="topbar">
-  <div class="logo">
-    <div class="logo-icon">❄</div>
-    <div>
-      <div class="logo-text">Cold Room Monitor</div>
-      <div class="logo-sub" id="roomCountLabel">IoT Dashboard · 7 ห้องเย็น</div>
-    </div>
-  </div>
-  <div class="topbar-right">
-    <span class="status-pill pill-no" id="fbStatus">Firebase: --</span>
-    <span class="status-pill pill-no" id="emailStatus">Email: --</span>
-    <span id="adminBadge" style="display:none;" class="admin-badge">Admin</span>
-    <span id="clockDisplay" style="font-size:11px;color:var(--muted);"></span>
-    <div class="conn-badge">
-      <div class="conn-dot dot-connecting" id="connDot"></div>
-      <span id="connText">MQTT...</span>
-    </div>
-    <button class="btn" onclick="toggleSound()" id="soundBtn">🔔</button>
-    <button class="btn btn-amber" onclick="exportExcel()">📥 Excel</button>
-    <button class="btn btn-green" onclick="openSettings()">⚙ ตั้งค่าระบบ</button>
-  </div>
-</div>
-
-<!-- SETTINGS MODAL -->
-<div class="modal-backdrop" id="settingsModal">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title">⚙ ตั้งค่าระบบ</div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <span id="modalAdminBadge" style="display:none;" class="admin-badge">Admin</span>
-        <button class="btn btn-red" id="logoutBtn" style="display:none;" onclick="adminLogout()">ออกจากระบบ</button>
-        <button class="btn" onclick="closeSettings()">ปิด ✕</button>
-      </div>
-    </div>
-    <div class="modal-body">
-
-      <!-- TABS -->
-      <div class="tabs">
-        <button class="tab active" onclick="switchTab('mqtt')">📡 MQTT</button>
-        <button class="tab" onclick="switchTab('firebase')">🔥 Firebase</button>
-        <button class="tab" onclick="switchTab('email')">📧 Email</button>
-        <button class="tab" onclick="switchTab('alarm')">⚠ Alarm</button>
-        <button class="tab" onclick="switchTab('password')">🔐 Password</button>
-      </div>
-
-      <!-- TAB: MQTT -->
-      <div class="tab-content active" id="tab-mqtt">
-        <div class="form-group">
-          <label class="form-label">MQTT Broker</label>
-          <div class="form-row">
-            <input type="text" id="brokerInput" value="broker.hivemq.com" style="flex:1;min-width:200px;" class="form-input" />
-            <button class="btn btn-green" onclick="reconnect();addLog('เชื่อมต่อ MQTT ใหม่...','gray')">เชื่อมต่อ</button>
-          </div>
-        </div>
-        <div class="info-box">
-          <b>MQTT Broker สาธารณะฟรี:</b><br>
-          broker.hivemq.com · test.mosquitto.org · broker.emqx.io<br>
-          ข้อมูล realtime จาก ESP32 ส่งผ่าน MQTT ทุก 5 วินาที
-        </div>
-      </div>
-
-      <!-- TAB: FIREBASE -->
-      <div class="tab-content" id="tab-firebase">
-        <div class="fb-status-box">
-          <div class="fb-dot" id="fbDot" style="background:var(--muted);"></div>
-          <span id="fbStatusDetail">ยังไม่เชื่อมต่อ Firebase</span>
-        </div>
-        <div class="fb-config-grid">
-          <div class="form-group">
-            <label class="form-label">API Key</label>
-            <input type="text" id="fbApiKey" class="form-input" placeholder="AIzaSy..." oninput="saveFbConfig()" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Auth Domain</label>
-            <input type="text" id="fbAuthDomain" class="form-input" placeholder="project.firebaseapp.com" oninput="saveFbConfig()" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Project ID</label>
-            <input type="text" id="fbProjectId" class="form-input" placeholder="my-coldroom" oninput="saveFbConfig()" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Storage Bucket</label>
-            <input type="text" id="fbStorageBucket" class="form-input" placeholder="project.appspot.com" oninput="saveFbConfig()" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Messaging Sender ID</label>
-            <input type="text" id="fbMessagingSenderId" class="form-input" placeholder="123456789" oninput="saveFbConfig()" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">App ID</label>
-            <input type="text" id="fbAppId" class="form-input" placeholder="1:123:web:abc" oninput="saveFbConfig()" />
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:4px;">
-          <button class="btn btn-green" onclick="initFirebase(true)">เชื่อมต่อ Firebase</button>
-        </div>
-        <details style="margin-top:12px;">
-          <summary>วิธีสมัคร Firebase ฟรี (คลิกดู)</summary>
-          <div class="hint-box">
-            <b>1.</b> เปิด <code>console.firebase.google.com</code> → Login Google<br>
-            <b>2.</b> กด Add project → ตั้งชื่อ → สร้าง<br>
-            <b>3.</b> เลือก Web app → Copy firebaseConfig<br>
-            <b>4.</b> ไปที่ Firestore Database → Create database → Start in test mode<br>
-            <b>5.</b> ไปที่ Authentication → Sign-in method → Email/Password → Enable<br>
-            <b>6.</b> Authentication → Users → Add user → ใส่ Email+Password ของ Admin<br>
-            <b>7.</b> ใส่ค่า config ด้านบน → กด เชื่อมต่อ Firebase
-          </div>
-        </details>
-      </div>
-
-      <!-- TAB: EMAIL -->
-      <div class="tab-content" id="tab-email">
-        <div class="key-grid">
-          <div class="key-box">
-            <div class="key-label">Service ID</div>
-            <input type="text" id="ejServiceId" placeholder="service_xxxxxxx" oninput="saveEmailSettings()" />
-          </div>
-          <div class="key-box">
-            <div class="key-label">Template ID</div>
-            <input type="text" id="ejTemplateId" placeholder="template_xxxxxxx" oninput="saveEmailSettings()" />
-          </div>
-          <div class="key-box">
-            <div class="key-label">Public Key</div>
-            <input type="text" id="ejPublicKey" placeholder="xxxxxxxxxxxxxxx" oninput="saveEmailSettings()" />
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">รายชื่อผู้รับ</span>
-          <span style="font-size:11px;color:var(--muted);" id="recipientCount">0 รายการ</span>
-        </div>
-        <div class="recipients-list" id="recipientsList"></div>
-        <div class="add-row">
-          <input type="text" class="inp-rname" id="newName" placeholder="ชื่อ" />
-          <input type="email" class="inp-email" id="newEmail" placeholder="email@company.com" />
-          <button class="btn btn-green" onclick="addRecipient()">+ เพิ่ม</button>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:12px;">
-          <button class="btn" onclick="saveEmailSettings()">💾 บันทึก</button>
-          <button class="btn btn-green" onclick="testEmail()">📧 ส่งทดสอบ</button>
-        </div>
-        <details>
-          <summary>วิธีตั้งค่า EmailJS + Allowed Origins สำหรับ GitHub Pages</summary>
-          <div class="hint-box">
-            <b>1.</b> สมัคร emailjs.com → Add Email Service → Copy Service ID<br>
-            <b>2.</b> Create Template → ใส่ตัวแปร: <code>{{room_name}} {{alarm_type}} {{message}} {{temperature}} {{min_temp}} {{max_temp}} {{time}} {{to_email}} {{to_name}}</code><br>
-            <b>3.</b> Account → General → Copy Public Key<br>
-            <b>4.</b> <b>Account → Security → Allowed Origins → Add → ใส่ URL GitHub Pages</b><br>
-            ตัวอย่าง: <code>https://username.github.io</code>
-          </div>
-        </details>
-      </div>
-
-      <!-- TAB: ALARM -->
-      <div class="tab-content" id="tab-alarm">
-        <div class="info-box">
-          <b>แจ้งเตือนเมื่อ:</b> อุณหภูมิสูงเกิน Max · ต่ำกว่า Min · ประตูเปิด · Compressor ปิดกะทันหัน · Defrost นานเกิน<br>
-          <b>การแจ้งเตือน:</b> ส่ง Email ทันที จากนั้น Cooldown ตามที่ตั้ง
-        </div>
-        <div class="cooldown-row">
-          <span>Cooldown:</span>
-          <input type="number" id="cooldownMin" value="5" min="1" max="60" />
-          <span>นาที</span>
-          <span style="margin-left:12px;">Defrost นานสุด:</span>
-          <input type="number" id="defrostMaxMin" value="45" min="10" max="120" />
-          <span>นาที</span>
-        </div>
-        <div style="overflow-x:auto;">
-          <table class="alarm-table">
-            <thead><tr>
-              <th>ID</th><th>ชื่อห้อง</th><th>Zone</th>
-              <th>Target°C</th><th>Min°C</th><th>Max°C</th><th>Warn±</th>
-            </tr></thead>
-            <tbody id="alarmTableBody"></tbody>
-          </table>
-        </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:6px;">* Warn = ระยะเตือนก่อนถึง Min/Max (สีเหลือง ยังไม่ส่ง Email)</div>
-        <div style="display:flex;gap:8px;margin-top:12px;">
-          <button class="btn btn-green" onclick="saveAlarmSettings()">💾 บันทึกการตั้งค่า</button>
-          <button class="btn" onclick="resetAlarmDefaults()">↺ ค่าเริ่มต้น</button>
-        </div>
-      </div>
-
-      <!-- TAB: PASSWORD -->
-      <div class="tab-content" id="tab-password">
-        <div class="info-box">
-          <b>ระบบ Admin Password</b><br>
-          เชื่อมต่อกับ Firebase Authentication — ใช้ Email + Password เดียวกับที่สร้างใน Firebase Console<br>
-          ทุกเครื่องที่ login ด้วย account เดียวกันจะมีสิทธิ์ Admin เหมือนกัน
-        </div>
-        <div id="pwLoggedOut">
-          <div class="form-group">
-            <label class="form-label">Admin Email</label>
-            <input type="email" id="adminEmail" class="form-input" placeholder="admin@company.com" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Password</label>
-            <input type="password" id="adminPw" class="form-input" placeholder="••••••••" />
-          </div>
-          <div id="loginError" style="color:var(--red);font-size:12px;margin-bottom:8px;"></div>
-          <button class="btn btn-green" onclick="firebaseLogin()">เข้าสู่ระบบ Admin</button>
-        </div>
-        <div id="pwLoggedIn" style="display:none;">
-          <div class="info-box" style="color:var(--green);">
-            ✅ เข้าสู่ระบบสำเร็จ — มีสิทธิ์แก้ไขการตั้งค่าทั้งหมด<br>
-            <span id="adminEmailDisplay" style="color:var(--text);"></span>
-          </div>
-          <button class="btn btn-red" onclick="adminLogout()">ออกจากระบบ Admin</button>
-        </div>
-        <div style="margin-top:16px;font-size:11px;color:var(--muted);">
-          หากยังไม่มี Firebase: การตั้งค่าจะถูกเก็บใน localStorage ของเบราว์เซอร์นี้เท่านั้น
-        </div>
-      </div>
-
-    </div>
-  </div>
-</div>
-
-<div class="main">
-
-  <!-- SUMMARY -->
-  <div class="summary-row">
-    <div class="sum-card"><div class="sum-label">ห้องทั้งหมด</div><div class="sum-val" style="color:var(--blue)" id="sumTotal">7</div><div class="sum-sub">Cold Rooms</div></div>
-    <div class="sum-card"><div class="sum-label">ปกติ</div><div class="sum-val" style="color:var(--green)" id="sumOk">--</div><div class="sum-sub">ห้อง</div></div>
-    <div class="sum-card"><div class="sum-label">เฝ้าระวัง</div><div class="sum-val" style="color:var(--amber)" id="sumWarn">--</div><div class="sum-sub">ห้อง</div></div>
-    <div class="sum-card"><div class="sum-label">แจ้งเตือน</div><div class="sum-val" style="color:var(--red)" id="sumAlarm">--</div><div class="sum-sub">ห้อง</div></div>
-    <div class="sum-card"><div class="sum-label">ออฟไลน์</div><div class="sum-val" style="color:var(--muted)" id="sumOff">7</div><div class="sum-sub">ห้อง</div></div>
-    <div class="sum-card"><div class="sum-label">Email วันนี้</div><div class="sum-val" style="color:var(--purple)" id="sumEmail">0</div><div class="sum-sub">ครั้ง</div></div>
-  </div>
-
-  <div class="section-title">สถานะห้องเย็น</div>
-  <div class="rooms-grid" id="roomsGrid"></div>
-
-  <!-- CHART WITH TIME RANGE -->
-  <div class="chart-section">
-    <div class="chart-controls">
-      <span style="font-size:12px;font-weight:500;color:var(--text);margin-right:4px;">กราฟอุณหภูมิ</span>
-      <button class="time-btn active" onclick="setTimeRange('1h')">1 ชม.</button>
-      <button class="time-btn" onclick="setTimeRange('3h')">3 ชม.</button>
-      <button class="time-btn" onclick="setTimeRange('6h')">6 ชม.</button>
-      <button class="time-btn" onclick="setTimeRange('1d')">1 วัน</button>
-      <button class="time-btn" onclick="setTimeRange('1m')">1 เดือน</button>
-      <button class="time-btn" onclick="setTimeRange('3m')">3 เดือน</button>
-      <button class="time-btn" onclick="setTimeRange('6m')">6 เดือน</button>
-      <button class="time-btn" onclick="setTimeRange('1y')">1 ปี</button>
-      <span style="margin-left:auto;font-size:11px;color:var(--muted);" id="chartRangeLabel">แสดง 1 ชั่วโมงล่าสุด</span>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-bottom:8px;" id="chartLegend"></div>
-    <div id="chartLoading" class="chart-loading" style="display:none;">กำลังโหลดข้อมูลจาก Firebase...</div>
-    <div class="chart-wrap"><canvas id="tempChart"></canvas></div>
-  </div>
-
-  <!-- LOG + REALTIME PANEL -->
-  <div class="bottom-grid">
-    <div class="panel">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-        <span class="section-title" style="margin:0;">บันทึกเหตุการณ์</span>
-        <button class="btn" style="font-size:11px;padding:3px 8px;" onclick="clearLog()">ล้าง</button>
-      </div>
-      <div class="log-list" id="logList">
-        <div style="font-size:12px;color:var(--muted);padding:8px 0;">รอข้อมูลจากเซ็นเซอร์...</div>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="section-title" style="margin:0 0 8px;">Firebase & การบันทึก</div>
-      <div style="font-size:12px;color:var(--muted);line-height:1.9;">
-        🔥 บันทึกลง Firestore ทุก <b style="color:var(--text);">5 นาที</b><br>
-        📊 เก็บข้อมูลได้ <b style="color:var(--text);">90 วัน</b> (แผนฟรี)<br>
-        📥 Export Excel ได้ทุกเมื่อ (ปุ่มด้านบน)<br>
-        🔄 Sync ทุกเครื่อง: การตั้งค่า + ข้อมูล
-      </div>
-      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Export ข้อมูลย้อนหลัง</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="btn" style="font-size:11px;" onclick="exportExcelRange(1)">วันนี้</button>
-          <button class="btn" style="font-size:11px;" onclick="exportExcelRange(7)">7 วัน</button>
-          <button class="btn" style="font-size:11px;" onclick="exportExcelRange(30)">30 วัน</button>
-          <button class="btn" style="font-size:11px;" onclick="exportExcelRange(90)">90 วัน</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<script>
-// ============================================================
-// DEFAULT CONFIG
-// ============================================================
-const DEFAULT_ROOMS = [
-  {id:'A',name:'ห้องเย็น A',   zone:'Zone 1',target:-18,min:-20,max:-15,warnOffset:1},
-  {id:'B',name:'ห้องเย็น B',   zone:'Zone 1',target:-18,min:-20,max:-15,warnOffset:1},
-  {id:'C',name:'ห้องแช่เย็น C',zone:'Zone 2',target:2,  min:0,  max:5,  warnOffset:0.5},
-  {id:'D',name:'ห้องแช่เย็น D',zone:'Zone 2',target:2,  min:0,  max:5,  warnOffset:0.5},
-  {id:'E',name:'ห้องเย็น E',   zone:'Zone 3',target:-20,min:-22,max:-17,warnOffset:1},
-  {id:'F',name:'ห้องแช่แข็ง F',zone:'Zone 3',target:-25,min:-28,max:-22,warnOffset:1},
-  {id:'G',name:'ห้องแช่แข็ง G',zone:'Zone 3',target:-25,min:-28,max:-22,warnOffset:1},
-];
-
-let ROOMS_CONFIG = JSON.parse(localStorage.getItem('roomsConfig') || 'null') || DEFAULT_ROOMS;
-let cooldownMs   = (parseInt(localStorage.getItem('cooldownMin')   || '5'))  * 60000;
-let defrostMaxMs = (parseInt(localStorage.getItem('defrostMaxMin') || '45')) * 60000;
-const ROOM_COLORS = {A:'#58a6ff',B:'#f85149',C:'#3fb950',D:'#d29922',E:'#bc8cff',F:'#39d0d8',G:'#fb8f44'};
-const roomState  = {};
-ROOMS_CONFIG.forEach(r => { roomState[r.id] = null; });
-
-let soundEnabled   = true;
-let alarmCooldown  = {};
-let emailSentToday = 0;
-const defrostStart = {};
-
-// ============================================================
-// FIREBASE
-// ============================================================
-let db = null, auth = null, fbApp = null;
-let isAdmin = false;
-let fbConfig = {};
-
-function loadFbConfig() {
-  ['fbApiKey','fbAuthDomain','fbProjectId','fbStorageBucket','fbMessagingSenderId','fbAppId'].forEach(k => {
-    const v = localStorage.getItem(k);
-    if (v) { document.getElementById(k).value = v; fbConfig[k.replace('fb','')] = v; }
-  });
-}
-
-function saveFbConfig() {
-  const keys = ['ApiKey','AuthDomain','ProjectId','StorageBucket','MessagingSenderId','AppId'];
-  keys.forEach(k => {
-    const val = document.getElementById('fb'+k).value.trim();
-    localStorage.setItem('fb'+k, val);
-    fbConfig[k] = val;
-  });
-}
-
-async function initFirebase(showAlert=false) {
-  const { initializeApp, getFirestore, getAuth, onAuthStateChanged } = window._fbModules;
-  const cfg = {
-    apiKey:            document.getElementById('fbApiKey').value.trim(),
-    authDomain:        document.getElementById('fbAuthDomain').value.trim(),
-    projectId:         document.getElementById('fbProjectId').value.trim(),
-    storageBucket:     document.getElementById('fbStorageBucket').value.trim(),
-    messagingSenderId: document.getElementById('fbMessagingSenderId').value.trim(),
-    appId:             document.getElementById('fbAppId').value.trim(),
-  };
-  if (!cfg.apiKey || !cfg.projectId) {
-    if (showAlert) alert('กรุณาใส่ Firebase Config ให้ครบก่อนครับ');
-    return;
-  }
-  try {
-    if (fbApp) {
-      try { await fbApp.delete(); } catch(e) {}
-    }
-    fbApp = initializeApp(cfg, 'coldroom-'+Date.now());
-    db   = getFirestore(fbApp);
-    auth = getAuth(fbApp);
-    onAuthStateChanged(auth, user => {
-      isAdmin = !!user;
-      document.getElementById('adminBadge').style.display    = isAdmin ? '' : 'none';
-      document.getElementById('modalAdminBadge').style.display = isAdmin ? '' : 'none';
-      document.getElementById('logoutBtn').style.display       = isAdmin ? '' : 'none';
-      document.getElementById('pwLoggedOut').style.display     = isAdmin ? 'none' : '';
-      document.getElementById('pwLoggedIn').style.display      = isAdmin ? '' : 'none';
-      if (isAdmin && user.email) document.getElementById('adminEmailDisplay').textContent = user.email;
-    });
-    setFbStatus(true, 'Firebase เชื่อมต่อสำเร็จ');
-    await loadSettingsFromFirebase();
-    if (showAlert) { alert('เชื่อมต่อ Firebase สำเร็จแล้วครับ!'); }
-  } catch(e) {
-    setFbStatus(false, 'Firebase error: ' + e.message);
-    if (showAlert) alert('เชื่อมต่อไม่สำเร็จ: ' + e.message);
-  }
-}
-
-function setFbStatus(ok, msg) {
-  const dot = document.getElementById('fbDot');
-  const el  = document.getElementById('fbStatus');
-  const el2 = document.getElementById('fbStatusDetail');
-  dot.style.background  = ok ? 'var(--green)' : 'var(--red)';
-  el.className   = ok ? 'status-pill pill-ok' : 'status-pill pill-no';
-  el.textContent = ok ? 'Firebase: ✓' : 'Firebase: ✗';
-  if (el2) el2.textContent = msg;
-}
-
-async function loadSettingsFromFirebase() {
-  if (!db) return;
-  const { doc, getDoc } = window._fbModules;
-  try {
-    const snap = await getDoc(doc(db, 'settings', 'config'));
-    if (snap.exists()) {
-      const d = snap.data();
-      if (d.roomsConfig)    { ROOMS_CONFIG = d.roomsConfig; localStorage.setItem('roomsConfig', JSON.stringify(ROOMS_CONFIG)); }
-      if (d.cooldownMin)    { cooldownMs   = d.cooldownMin * 60000; }
-      if (d.defrostMaxMin)  { defrostMaxMs = d.defrostMaxMin * 60000; }
-      if (d.emailRecipients){ emailRecipients = d.emailRecipients; localStorage.setItem('emailRecipients', JSON.stringify(emailRecipients)); }
-      if (d.ejServiceId)    { document.getElementById('ejServiceId').value  = d.ejServiceId;  localStorage.setItem('ejServiceId', d.ejServiceId); }
-      if (d.ejTemplateId)   { document.getElementById('ejTemplateId').value = d.ejTemplateId; localStorage.setItem('ejTemplateId', d.ejTemplateId); }
-      if (d.ejPublicKey)    { document.getElementById('ejPublicKey').value  = d.ejPublicKey;  localStorage.setItem('ejPublicKey', d.ejPublicKey); }
-      rebuildCards();
-      renderRecipients();
-      updateEmailStatus();
-      addLog('โหลดการตั้งค่าจาก Firebase สำเร็จ', 'green');
-    }
-  } catch(e) { addLog('โหลด Firebase settings error: '+e.message, 'red'); }
-}
-
-async function saveSettingsToFirebase() {
-  if (!db || !isAdmin) return;
-  const { doc, setDoc } = window._fbModules;
-  try {
-    await setDoc(doc(db, 'settings', 'config'), {
-      roomsConfig:    ROOMS_CONFIG,
-      cooldownMin:    Math.round(cooldownMs/60000),
-      defrostMaxMin:  Math.round(defrostMaxMs/60000),
-      emailRecipients,
-      ejServiceId:    document.getElementById('ejServiceId').value.trim(),
-      ejTemplateId:   document.getElementById('ejTemplateId').value.trim(),
-      ejPublicKey:    document.getElementById('ejPublicKey').value.trim(),
-      updatedAt:      new Date().toISOString(),
-    });
-    addLog('บันทึกการตั้งค่าไปยัง Firebase สำเร็จ', 'green');
-  } catch(e) { addLog('บันทึก Firebase error: '+e.message, 'red'); }
-}
-
-// บันทึกข้อมูลเซ็นเซอร์ลง Firestore ทุก 5 นาที
-let lastFbSave = 0;
-async function maybeSaveToFirebase(id, data) {
-  if (!db) return;
-  const now = Date.now();
-  if (now - lastFbSave < 300000) return; // 5 นาที
-  lastFbSave = now;
-  const { collection, addDoc } = window._fbModules;
-  const batch = {};
-  ROOMS_CONFIG.forEach(r => { if (roomState[r.id]) batch[r.id] = roomState[r.id]; });
-  try {
-    await addDoc(collection(db, 'sensorData'), {
-      ts: new Date(),
-      rooms: batch,
-    });
-  } catch(e) { console.warn('Firebase save error:', e); }
-}
-
-// ============================================================
-// FIREBASE AUTH
-// ============================================================
-async function firebaseLogin() {
-  if (!auth) { alert('กรุณาตั้งค่า Firebase ในแท็บ Firebase ก่อนครับ'); return; }
-  const email = document.getElementById('adminEmail').value.trim();
-  const pw    = document.getElementById('adminPw').value;
-  const { signInWithEmailAndPassword } = window._fbModules;
-  try {
-    await signInWithEmailAndPassword(auth, email, pw);
-    document.getElementById('loginError').textContent = '';
-    await loadSettingsFromFirebase();
-  } catch(e) {
-    document.getElementById('loginError').textContent = 'Login ไม่สำเร็จ: ' + (e.code === 'auth/invalid-credential' ? 'Email หรือ Password ไม่ถูกต้อง' : e.message);
-  }
-}
-
-async function adminLogout() {
-  if (!auth) return;
-  const { signOut } = window._fbModules;
-  await signOut(auth);
-  isAdmin = false;
-  addLog('Admin ออกจากระบบแล้ว', 'amber');
-}
-
-// ============================================================
-// PASSWORD MODAL (fallback ถ้าไม่มี Firebase)
-// ============================================================
-let pwCallback = null;
-function openSettings() {
-  document.getElementById('settingsModal').classList.add('open');
-  switchTab('mqtt');
-}
-function closeSettings() { document.getElementById('settingsModal').classList.remove('open'); }
-function closePwModal()  { document.getElementById('pwModal').classList.remove('open'); document.getElementById('pwInput').value = ''; document.getElementById('pwError').textContent = ''; }
-
-async function verifyPassword() {
-  const pw   = document.getElementById('pwInput').value;
-  const hash = await sha256(pw);
-  const stored = localStorage.getItem('adminPwHash');
-  if (!stored) {
-    localStorage.setItem('adminPwHash', hash);
-    isAdmin = true; closePwModal();
-    if (pwCallback) { pwCallback(); pwCallback = null; }
-    return;
-  }
-  if (hash === stored) {
-    isAdmin = true; closePwModal();
-    if (pwCallback) { pwCallback(); pwCallback = null; }
-  } else {
-    document.getElementById('pwError').textContent = 'Password ไม่ถูกต้อง';
-  }
-}
-
-async function sha256(msg) {
-  const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-
-// ============================================================
-// TABS
-// ============================================================
-function switchTab(name) {
-  document.querySelectorAll('.tab').forEach((t,i) => {
-    const names = ['mqtt','firebase','email','alarm','password'];
-    t.classList.toggle('active', names[i] === name);
-  });
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active');
-  if (name === 'alarm') renderAlarmTable();
-}
-
-// ============================================================
-// CLOCK
-// ============================================================
-function updateClock() {
-  const now = new Date();
-  document.getElementById('clockDisplay').textContent =
-    now.toLocaleDateString('th-TH')+' '+now.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-}
-setInterval(updateClock,1000); updateClock();
-
-// ============================================================
-// BUILD ROOM CARDS
-// ============================================================
-function buildCards() {
-  const grid = document.getElementById('roomsGrid');
-  grid.innerHTML = '';
-  ROOMS_CONFIG.forEach(r => {
-    const card = document.createElement('div');
-    card.className = 'room-card'; card.id = 'card-'+r.id;
-    card.innerHTML = `
-      <div class="room-header">
+    <div class="header">
         <div>
-          <div class="room-name" id="rname-${r.id}">${r.name}</div>
-          <div class="room-zone" id="rzone-${r.id}">${r.zone} · ${r.target}°C</div>
+            <h2 id="roomCountLabel" style="margin:0;">Cold Room Dashboard</h2>
+            <div style="font-size: 0.85em; color: var(--muted);">
+                <span id="connDot" class="conn-dot"></span> <span id="connText">Connecting...</span>
+                | <span id="clockDisplay">--:--:--</span>
+            </div>
         </div>
-        <div class="status-chip chip-off" id="chip-${r.id}">ออฟไลน์</div>
-      </div>
-      <div class="metrics">
-        <div class="metric-box">
-          <div class="metric-label">อุณหภูมิ</div>
-          <div class="metric-value val-cold" id="temp-${r.id}">--<span class="metric-unit">°C</span></div>
-          <div class="metric-hint" id="hint-${r.id}">Min ${r.min} / Max ${r.max}°C</div>
+        <div style="display:flex; gap:10px;">
+            <button onclick="exportExcel()">Export Today</button>
+            <button id="soundBtn" onclick="toggleSound()">🔔</button>
+            <button onclick="openSettings()">⚙️ Settings</button>
         </div>
-        <div class="metric-box">
-          <div class="metric-label">ความชื้น</div>
-          <div class="metric-value" id="hum-${r.id}">--<span class="metric-unit">%RH</span></div>
-          <div class="metric-hint">Relative Humidity</div>
+    </div>
+
+    <div style="display:flex; gap:15px; margin-bottom:15px; font-size:0.9em;">
+        <div style="color:var(--green)">Online: <span id="sumOk">0</span></div>
+        <div style="color:var(--amber)">Warning: <span id="sumWarn">0</span></div>
+        <div style="color:var(--red)">Alarm: <span id="sumAlarm">0</span></div>
+        <div style="color:var(--muted)">Offline: <span id="sumOff">0</span></div>
+    </div>
+
+    <div class="grid" id="roomsGrid">
         </div>
-      </div>
-      <div class="door-row">
-        <span>ประตู: <span class="door-status door-closed" id="door-${r.id}">ไม่ทราบ</span></span>
-        <span class="ts-label" id="ts-${r.id}">ออฟไลน์</span>
-      </div>
-      <div class="equip-row">
-        <span class="equip-badge comp-off" id="comp-${r.id}">⚙ Compressor --</span>
-        <span class="equip-badge defrost-off" id="defrost-${r.id}">❄ Defrost --</span>
-      </div>
-      <div id="alarms-${r.id}" style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;min-height:0;"></div>`;
-    grid.appendChild(card);
-  });
-  document.getElementById('sumTotal').textContent = ROOMS_CONFIG.length;
-  document.getElementById('roomCountLabel').textContent = `IoT Dashboard · ${ROOMS_CONFIG.length} ห้องเย็น`;
-}
 
-function rebuildCards() {
-  buildCards(); initChartDatasets();
-  ROOMS_CONFIG.forEach(r => { if (roomState[r.id]) updateCard(r.id, roomState[r.id]); });
-}
+    <div class="side-panel">
+        <div class="chart-container">
+            <canvas id="tempChart"></canvas>
+        </div>
+        
+        <div class="log-container">
+            <div class="log-header">
+                <strong>Event Logs</strong>
+                <button onclick="clearLog()" style="padding:2px 8px; font-size:0.8em;">Clear</button>
+            </div>
+            <div class="log-list" id="logList">
+                <div style="color:var(--muted); text-align:center; padding-top:20px;">รอข้อมูล...</div>
+            </div>
+        </div>
+    </div>
 
-// ============================================================
-// UPDATE CARD
-// ============================================================
-function updateCard(id, data) {
-  const cfg = ROOMS_CONFIG.find(r => r.id === id);
-  if (!cfg) return;
-  const prev = roomState[id] ? {...roomState[id]} : null;
-  roomState[id] = data;
+    <div id="settingsModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:100; align-items:center; justify-content:center;">
+        <div style="background:var(--card); padding:20px; border-radius:8px; width:90%; max-width:500px; border:1px solid var(--border);">
+            <h3>Configuration</h3>
+            <label>MQTT Broker:</label><br>
+            <input type="text" id="brokerInput" style="width:100%; margin-bottom:10px;" value="broker.hivemq.com"><br>
+            <label>Defrost Limit (Min):</label><br>
+            <input type="number" id="defrostMaxMin" style="width:100%; margin-bottom:15px;" value="45"><br>
+            <div style="text-align:right;">
+                <button onclick="saveSettings()">Save & Close</button>
+                <button onclick="closeSettings()">Cancel</button>
+            </div>
+        </div>
+    </div>
 
-  const t = data.temp;
-  let status = 'ok';
-  if      (t > cfg.max || t < cfg.min)                                  status = 'alarm';
-  else if (t > cfg.max-cfg.warnOffset || t < cfg.min+cfg.warnOffset)    status = 'warn';
+    <script>
+        // ============================================================
+        // CONFIG & STATE
+        // ============================================================
+        const DEFAULT_ROOMS = [
+            { id: 'A', name: 'Room A', zone: 'Chill', target: 5, min: 2, max: 8, warnOffset: 1 },
+            { id: 'B', name: 'Room B', zone: 'Freezer', target: -18, min: -22, max: -15, warnOffset: 2 }
+        ];
 
-  const card = document.getElementById('card-'+id);
-  if (!card) return;
-  card.className = 'room-card'+(status==='alarm'?' alarm':status==='warn'?' warn':'');
+        let ROOMS_CONFIG = JSON.parse(localStorage.getItem('roomsConfig')) || DEFAULT_ROOMS;
+        let defrostMaxMs = (parseInt(localStorage.getItem('defrostMaxMin') || '45')) * 60000;
+        const roomState = {};
+        const defrostStart = {};
+        let soundEnabled = true;
 
-  const chipMap = {ok:['chip-ok','ปกติ'],warn:['chip-warn','เฝ้าระวัง'],alarm:['chip-err','แจ้งเตือน!']};
-  const chipEl  = document.getElementById('chip-'+id);
-  chipEl.className = 'status-chip '+chipMap[status][0];
-  chipEl.textContent = chipMap[status][1];
+        // ============================================================
+        // UI & RENDERING
+        // ============================================================
+        function buildCards() {
+            const grid = document.getElementById('roomsGrid');
+            grid.innerHTML = '';
+            ROOMS_CONFIG.forEach(r => {
+                const card = document.createElement('div');
+                card.className = 'room-card'; card.id = `card-${r.id}`;
+                card.innerHTML = `
+                    <div class="room-header">
+                        <div>
+                            <div class="room-name">${r.name}</div>
+                            <div class="room-zone">${r.zone} · Target ${r.target}°C</div>
+                        </div>
+                        <div class="status-chip chip-off" id="chip-${r.id}">Offline</div>
+                    </div>
+                    <div class="metrics">
+                        <div class="metric-box">
+                            <div class="metric-label">TEMP</div>
+                            <div class="metric-value" id="temp-${r.id}">--</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">HUM</div>
+                            <div class="metric-value" id="hum-${r.id}">--</div>
+                        </div>
+                    </div>
+                    <div style="font-size:0.8em; margin-bottom:5px;">
+                        Door: <span id="door-${r.id}">--</span>
+                    </div>
+                    <div class="equip-row">
+                        <span class="equip-badge" id="comp-${r.id}">⚙️ Comp --</span>
+                        <span class="equip-badge" id="defrost-${r.id}">❄️ Defrost --</span>
+                    </div>
+                `;
+                grid.appendChild(card);
+                roomState[r.id] = null;
+            });
+        }
 
-  const tc = t<0?'val-cold':(status==='alarm'?'val-err':status==='warn'?'val-warn':'val-ok');
-  document.getElementById('temp-'+id).className = 'metric-value '+tc;
-  document.getElementById('temp-'+id).innerHTML = t.toFixed(1)+'<span class="metric-unit">°C</span>';
-  document.getElementById('hum-'+id).innerHTML  = Math.round(data.hum)+'<span class="metric-unit">%RH</span>';
-  document.getElementById('hint-'+id).textContent = `Min ${cfg.min} / Max ${cfg.max}°C`;
-  document.getElementById('rname-'+id).textContent = cfg.name;
-  document.getElementById('rzone-'+id).textContent = `${cfg.zone} · ${cfg.target}°C`;
+        function updateCard(id, data) {
+            const cfg = ROOMS_CONFIG.find(r => r.id === id);
+            if (!cfg) return;
+            
+            const prev = roomState[id];
+            roomState[id] = data;
 
-  const doorEl = document.getElementById('door-'+id);
-  doorEl.textContent = data.door==='open'?'เปิดอยู่ ⚠':'ปิด';
-  doorEl.className   = 'door-status '+(data.door==='open'?'door-open':'door-closed');
+            // Logic Status
+            let status = 'ok';
+            if (data.temp > cfg.max || data.temp < cfg.min) status = 'alarm';
+            else if (data.temp > cfg.max - cfg.warnOffset || data.temp < cfg.min + cfg.warnOffset) status = 'warn';
 
-  const compEl = document.getElementById('comp-'+id);
-  if (data.compressor !== undefined) {
-    compEl.className   = 'equip-badge '+(data.compressor?'comp-on':'comp-off');
-    compEl.textContent = data.compressor?'⚙ Compressor ON':'⚙ Compressor OFF';
-  }
-  const defrostEl = document.getElementById('defrost-'+id);
-  if (data.defrost !== undefined) {
-    if (data.defrost) {
-      if (!defrostStart[id]) defrostStart[id] = Date.now();
-      const min = Math.floor((Date.now()-defrostStart[id])/60000);
-      defrostEl.className   = 'equip-badge defrost-on';
-      defrostEl.textContent = `❄ Defrosting ${min>0?min+'m':''}`;
-    } else {
-      defrostStart[id] = null;
-      defrostEl.className   = 'equip-badge defrost-off';
-      defrostEl.textContent = '❄ Defrost OFF';
-    }
-  }
+            const card = document.getElementById(`card-${id}`);
+            card.className = `room-card ${status}`;
+            
+            document.getElementById(`chip-${id}`).className = `status-chip chip-${status === 'alarm' ? 'err' : 'ok'}`;
+            document.getElementById(`chip-${id}`).textContent = status.toUpperCase();
+            
+            const tempEl = document.getElementById(`temp-${id}`);
+            tempEl.textContent = data.temp.toFixed(1);
+            tempEl.className = `metric-value ${data.temp < 0 ? 'val-cold' : (status === 'alarm' ? 'val-err' : 'val-ok')}`;
+            
+            document.getElementById(`hum-${id}`).textContent = Math.round(data.hum) + '%';
+            
+            const doorEl = document.getElementById(`door-${id}`);
+            doorEl.textContent = data.door === 'open' ? 'OPEN ⚠️' : 'Closed';
+            doorEl.style.color = data.door === 'open' ? 'var(--red)' : 'var(--green)';
 
-  const now = new Date();
-  document.getElementById('ts-'+id).textContent =
-    now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+            // Comp & Defrost
+            if (data.defrost) {
+                if (!defrostStart[id]) defrostStart[id] = Date.now();
+                const m = Math.floor((Date.now() - defrostStart[id]) / 60000);
+                document.getElementById(`defrost-${id}`).className = 'equip-badge defrost-on';
+                document.getElementById(`defrost-${id}`).textContent = `❄️ Defrost ${m}m`;
+            } else {
+                defrostStart[id] = null;
+                document.getElementById(`defrost-${id}`).className = 'equip-badge';
+                document.getElementById(`defrost-${id}`).textContent = `❄️ Defrost OFF`;
+            }
 
-  checkAlarms(id, data, prev, cfg);
-  pushChartPoint(id, t);
-  updateSummary();
-  updateAlarmBanner();
-  maybeSaveToFirebase(id, data);
-}
+            if (prev && prev.temp !== data.temp && status === 'alarm') {
+                addLog(`⚠️ ${cfg.name}: Temp critical ${data.temp}°C`, 'red');
+                if (soundEnabled) playAlarmSound();
+            }
+            
+            updateSummary();
+            pushChartPoint(id, data.temp);
+        }
 
-// ============================================================
-// ALARMS
-// ============================================================
-function checkAlarms(id, data, prev, cfg) {
-  const box = document.getElementById('alarms-'+id);
-  box.innerHTML = '';
-  if (data.temp > cfg.max) { box.innerHTML += `<span class="alarm-badge abadge-temp">🌡 อุณหภูมิสูงเกิน</span>`; triggerAlarm(id,'temp_high',`อุณหภูมิสูงเกิน ${data.temp.toFixed(1)}°C (Max ${cfg.max}°C)`,'อุณหภูมิสูงเกิน',data.temp,cfg); }
-  if (data.temp < cfg.min) { box.innerHTML += `<span class="alarm-badge abadge-low">❄ อุณหภูมิต่ำเกิน</span>`; triggerAlarm(id,'temp_low',`อุณหภูมิต่ำเกิน ${data.temp.toFixed(1)}°C (Min ${cfg.min}°C)`,'อุณหภูมิต่ำเกิน',data.temp,cfg); }
-  if (data.door==='open')  { box.innerHTML += `<span class="alarm-badge abadge-door">🚪 ประตูเปิด</span>`; triggerAlarm(id,'door_open','ประตูเปิดอยู่','ประตูเปิด',data.temp,cfg); }
-  if (data.defrost && defrostStart[id] && (Date.now()-defrostStart[id])>defrostMaxMs) {
-    const m = Math.floor((Date.now()-defrostStart[id])/60000);
-    box.innerHTML += `<span class="alarm-badge abadge-defrost">⏱ Defrost ${m}m</span>`;
-    triggerAlarm(id,'defrost_long',`Defrost นานเกิน ${m} นาที`,'Defrost นานเกิน',data.temp,cfg);
-  }
-  if (prev) {
-    if (prev.door!==data.door)           addLog(`${cfg.name}: ประตู${data.door==='open'?'เปิด':'ปิด'}`, data.door==='open'?'amber':'green');
-    if (prev.compressor!==undefined && prev.compressor!==data.compressor) {
-      addLog(`${cfg.name}: Compressor ${data.compressor?'ON':'OFF'}`, data.compressor?'green':'muted');
-      if (!data.compressor && !data.defrost) triggerAlarm(id,'comp_off','Compressor ปิดกะทันหัน','Compressor OFF',data.temp,cfg);
-    }
-    if (prev.defrost!==undefined && prev.defrost!==data.defrost) addLog(`${cfg.name}: Defrost ${data.defrost?'เริ่ม':'สิ้นสุด'}`, 'amber');
-  }
-}
+        // ============================================================
+        // MQTT & LOGS
+        // ============================================================
+        let mqttClient = null;
+        function reconnect() {
+            if (mqttClient) mqttClient.end(true);
+            const broker = document.getElementById('brokerInput').value.trim() || 'broker.hivemq.com';
+            
+            setConn('connecting');
+            mqttClient = mqtt.connect(`wss://${broker}:8884/mqtt`, {
+                clientId: 'coldroom-' + Math.random().toString(16).slice(2, 8),
+                clean: true
+            });
 
-function triggerAlarm(roomId, type, message, alarmType, temp, cfg) {
-  const key = roomId+'_'+type, now = Date.now();
-  if (alarmCooldown[key] && now-alarmCooldown[key] < cooldownMs) return;
-  alarmCooldown[key] = now;
-  addLog('⚠ '+cfg.name+': '+message, type.includes('temp_h')?'red':type.includes('low')?'purple':'amber');
-  playAlarmSound();
-  sendEmail(cfg.name, alarmType, message, temp, cfg);
-}
+            mqttClient.on('connect', () => {
+                setConn('connected');
+                addLog('MQTT Connected', 'green');
+                ROOMS_CONFIG.forEach(r => mqttClient.subscribe(`coldroom/${r.id}/sensor`));
+            });
 
-// ============================================================
-// SUMMARY
-// ============================================================
-function updateSummary() {
-  let ok=0,warn=0,alarm=0,off=0;
-  ROOMS_CONFIG.forEach(r => {
-    if (!roomState[r.id]) { off++; return; }
-    const t = roomState[r.id].temp;
-    if (t>r.max||t<r.min) alarm++;
-    else if (t>r.max-r.warnOffset||t<r.min+r.warnOffset) warn++;
-    else ok++;
-  });
-  document.getElementById('sumOk').textContent    = ok;
-  document.getElementById('sumWarn').textContent  = warn;
-  document.getElementById('sumAlarm').textContent = alarm;
-  document.getElementById('sumOff').textContent   = off;
-}
+            mqttClient.on('message', (topic, msg) => {
+                try {
+                    const d = JSON.parse(msg.toString());
+                    const id = d.room || topic.split('/')[1];
+                    if (id in roomState) updateCard(id, d);
+                } catch(e) { console.error(e); }
+            });
 
-function updateAlarmBanner() {
-  let n=0;
-  ROOMS_CONFIG.forEach(r => { const d=roomState[r.id]; if(d&&(d.temp>r.max||d.temp<r.min||d.door==='open'))n++; });
-  document.getElementById('alarmCount').textContent = n;
-  document.getElementById('alarmBanner').classList.toggle('show', n>0);
-}
+            mqttClient.on('error', () => setConn('error'));
+        }
 
-function dismissAlarms() { document.getElementById('alarmBanner').classList.remove('show'); alarmCooldown = {}; }
+        function setConn(s) {
+            const m = { connecting: ['#d29922', 'Connecting...'], connected: ['#3fb950', 'Connected'], error: ['#f85149', 'Error'] };
+            document.getElementById('connDot').style.cssText = `display:inline-block; width:8px; height:8px; border-radius:50%; background:${m[s][0]}`;
+            document.getElementById('connText').textContent = m[s][1];
+        }
 
-// ============================================================
-// SOUND
-// ============================================================
-let audioCtx = null;
-function playAlarmSound() {
-  if (!soundEnabled) return;
-  try {
-    if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-    [880,660,880,660].forEach((freq,i)=>{
-      const o=audioCtx.createOscillator(),g=audioCtx.createGain();
-      o.connect(g);g.connect(audioCtx.destination);
-      o.frequency.value=freq;o.type='square';
-      g.gain.setValueAtTime(.3,audioCtx.currentTime+i*.15);
-      g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+i*.15+.12);
-      o.start(audioCtx.currentTime+i*.15);o.stop(audioCtx.currentTime+i*.15+.12);
-    });
-    const ind=document.getElementById('soundIndicator');
-    ind.classList.add('show'); setTimeout(()=>ind.classList.remove('show'),2000);
-  } catch(e){}
-}
-function toggleSound() { soundEnabled=!soundEnabled; document.getElementById('soundBtn').textContent=soundEnabled?'🔔':'🔕'; }
+        function addLog(msg, color) {
+            const c = { red: '#f85149', green: '#3fb950', amber: '#d29922' }[color] || '#7d8590';
+            const list = document.getElementById('logList');
+            if (list.innerHTML.includes('รอข้อมูล')) list.innerHTML = '';
+            const t = new Date().toLocaleTimeString();
+            const item = document.createElement('div');
+            item.className = 'log-item';
+            item.innerHTML = `<span class="log-time">[${t}]</span> <span style="color:${c}">${msg}</span>`;
+            list.insertBefore(item, list.firstChild);
+            if (list.children.length > 50) list.removeChild(list.lastChild);
+        }
 
-// ============================================================
-// ALARM SETTINGS
-// ============================================================
-function renderAlarmTable() {
-  document.getElementById('cooldownMin').value   = Math.round(cooldownMs/60000);
-  document.getElementById('defrostMaxMin').value = Math.round(defrostMaxMs/60000);
-  document.getElementById('alarmTableBody').innerHTML = ROOMS_CONFIG.map((r,i)=>`
-    <tr>
-      <td style="font-weight:600;color:var(--blue);">${r.id}</td>
-      <td><input type="text"   value="${r.name}"       onchange="ROOMS_CONFIG[${i}].name=this.value;rebuildCards();"/></td>
-      <td><input type="text"   value="${r.zone}"       style="width:70px;" onchange="ROOMS_CONFIG[${i}].zone=this.value;"/></td>
-      <td><input type="number" value="${r.target}"     step="0.5" onchange="ROOMS_CONFIG[${i}].target=parseFloat(this.value);"/></td>
-      <td><input type="number" value="${r.min}"        step="0.5" onchange="ROOMS_CONFIG[${i}].min=parseFloat(this.value);"/></td>
-      <td><input type="number" value="${r.max}"        step="0.5" onchange="ROOMS_CONFIG[${i}].max=parseFloat(this.value);"/></td>
-      <td><input type="number" value="${r.warnOffset}" step="0.1" style="width:55px;" onchange="ROOMS_CONFIG[${i}].warnOffset=parseFloat(this.value);"/></td>
-    </tr>`).join('');
-}
+        function clearLog() { document.getElementById('logList').innerHTML = '<div style="color:var(--muted); text-align:center;">Log Cleared</div>'; }
 
-async function saveAlarmSettings() {
-  const m  = parseInt(document.getElementById('cooldownMin').value)   || 5;
-  const dm = parseInt(document.getElementById('defrostMaxMin').value) || 45;
-  cooldownMs   = m*60000; defrostMaxMs = dm*60000;
-  localStorage.setItem('cooldownMin', m); localStorage.setItem('defrostMaxMin', dm);
-  localStorage.setItem('roomsConfig', JSON.stringify(ROOMS_CONFIG));
-  alarmCooldown = {};
-  await saveSettingsToFirebase();
-  addLog('บันทึกการตั้งค่า Alarm เรียบร้อย', 'green');
-  closeSettings();
-}
+        // ============================================================
+        // CHART
+        // ============================================================
+        let chart;
+        const chartData = { labels: [], datasets: [] };
 
-function resetAlarmDefaults() {
-  if (!confirm('รีเซ็ตค่าห้องเย็นทั้งหมดเป็นค่าเริ่มต้น?')) return;
-  ROOMS_CONFIG = JSON.parse(JSON.stringify(DEFAULT_ROOMS));
-  renderAlarmTable(); rebuildCards();
-}
+        function initChart() {
+            const ctx = document.getElementById('tempChart').getContext('2d');
+            const datasets = ROOMS_CONFIG.map((r, i) => ({
+                label: r.name,
+                data: [],
+                borderColor: ['#58a6ff', '#f85149', '#3fb950', '#d29922'][i % 4],
+                tension: 0.3,
+                pointRadius: 0
+            }));
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: [], datasets },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#7d8590', font: { size: 10 } } } },
+                    scales: {
+                        x: { ticks: { color: '#7d8590', maxTicksLimit: 10 } },
+                        y: { ticks: { color: '#7d8590' } }
+                    }
+                }
+            });
+        }
 
-// ============================================================
-// EMAIL
-// ============================================================
-let emailRecipients = JSON.parse(localStorage.getItem('emailRecipients') || '[]');
-let ejInitialized   = false;
+        function pushChartPoint(id, temp) {
+            if (!chart) return;
+            const idx = ROOMS_CONFIG.findIndex(r => r.id === id);
+            const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            if (chart.data.labels.length === 0 || chart.data.labels[chart.data.labels.length - 1] !== now) {
+                chart.data.labels.push(now);
+                if (chart.data.labels.length > 30) chart.data.labels.shift();
+            }
 
-function getEjKeys() {
-  return { serviceId:document.getElementById('ejServiceId').value.trim(), templateId:document.getElementById('ejTemplateId').value.trim(), publicKey:document.getElementById('ejPublicKey').value.trim() };
-}
+            chart.data.datasets[idx].data.push(temp);
+            if (chart.data.datasets[idx].data.length > 30) chart.data.datasets[idx].data.shift();
+            chart.update('quiet');
+        }
 
-function saveEmailSettings() {
-  const s = getEjKeys();
-  localStorage.setItem('ejServiceId',s.serviceId); localStorage.setItem('ejTemplateId',s.templateId); localStorage.setItem('ejPublicKey',s.publicKey);
-  ejInitialized = false;
-  updateEmailStatus();
-}
+        // ============================================================
+        // UTILS & INIT
+        // ============================================================
+        function updateSummary() {
+            let ok=0, warn=0, alarm=0, off=0;
+            ROOMS_CONFIG.forEach(r => {
+                const d = roomState[r.id];
+                if (!d) off++;
+                else if (d.temp > r.max || d.temp < r.min) alarm++;
+                else if (d.temp > r.max - r.warnOffset || d.temp < r.min + r.warnOffset) warn++;
+                else ok++;
+            });
+            document.getElementById('sumOk').textContent = ok;
+            document.getElementById('sumWarn').textContent = warn;
+            document.getElementById('sumAlarm').textContent = alarm;
+            document.getElementById('sumOff').textContent = off;
+        }
 
-function initEJ() {
-  const s = getEjKeys();
-  if (!s.publicKey) return false;
-  try { emailjs.init({publicKey:s.publicKey}); ejInitialized=true; return true; } catch(e){ return false; }
-}
+        function playAlarmSound() {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.frequency.value = 880; gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            osc.start(); osc.stop(ctx.currentTime + 0.2);
+        }
 
-function updateEmailStatus() {
-  const s  = getEjKeys();
-  const ok = s.serviceId&&s.templateId&&s.publicKey&&emailRecipients.length>0;
-  const el = document.getElementById('emailStatus');
-  el.className   = ok?'status-pill pill-ok':'status-pill pill-no';
-  el.textContent = ok?`Email: ${emailRecipients.length} ผู้รับ ✓`:'Email: --';
-  if (s.publicKey&&!ejInitialized) initEJ();
-}
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            document.getElementById('soundBtn').textContent = soundEnabled ? '🔔' : '🔕';
+        }
 
-async function sendEmail(roomName, alarmType, message, temperature, cfg) {
-  const s = getEjKeys();
-  if (!s.serviceId||!s.templateId||!s.publicKey||emailRecipients.length===0) return;
-  if (!ejInitialized&&!initEJ()) return;
-  const now=new Date(), timeStr=now.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  const params={room_name:roomName,alarm_type:alarmType,message,temperature:temperature.toFixed(1),min_temp:cfg.min,max_temp:cfg.max,time:timeStr};
-  for (const r of emailRecipients) {
-    try {
-      await emailjs.send(s.serviceId,s.templateId,{...params,to_email:r.email,to_name:r.name});
-      emailSentToday++;
-      document.getElementById('sumEmail').textContent = emailSentToday;
-      addLog(`📧 ส่ง Email ถึง ${r.name} สำเร็จ`,'green');
-    } catch(e){ addLog(`📧 ส่ง Email ถึง ${r.name} ไม่สำเร็จ: ${e?.text||e?.message}`,'red'); }
-  }
-}
+        function openSettings() { document.getElementById('settingsModal').style.display = 'flex'; }
+        function closeSettings() { document.getElementById('settingsModal').style.display = 'none'; }
+        function saveSettings() {
+            const dm = document.getElementById('defrostMaxMin').value;
+            localStorage.setItem('defrostMaxMin', dm);
+            defrostMaxMs = dm * 60000;
+            reconnect();
+            closeSettings();
+        }
 
-async function testEmail() {
-  const s = getEjKeys();
-  if (!s.serviceId||!s.templateId||!s.publicKey) { alert('กรุณาใส่ EmailJS Keys ก่อนครับ'); return; }
-  if (emailRecipients.length===0) { alert('กรุณาเพิ่มผู้รับก่อนครับ'); return; }
-  ejInitialized=false;
-  if (!initEJ()) { alert('Public Key ไม่ถูกต้อง'); return; }
-  addLog('📧 กำลังส่ง Email ทดสอบ...','gray');
-  await sendEmail('ห้องเย็น A (ทดสอบ)','ทดสอบระบบ','ทดสอบการแจ้งเตือน Cold Room Monitor',-18,{min:-20,max:-15});
-  alert('ส่งแล้วครับ เช็ค inbox ได้เลย');
-}
+        function exportExcel() {
+            const data = Object.keys(roomState).map(id => ({
+                Room: id,
+                Temp: roomState[id]?.temp || 'N/A',
+                Hum: roomState[id]?.hum || 'N/A',
+                Time: new Date().toLocaleString()
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Status");
+            XLSX.writeFile(wb, "ColdRoom_Report.xlsx");
+        }
 
-function renderRecipients() {
-  const list = document.getElementById('recipientsList');
-  document.getElementById('recipientCount').textContent = emailRecipients.length+' รายการ';
-  list.innerHTML = emailRecipients.length===0
-    ? '<div style="font-size:12px;color:var(--muted);padding:4px 0;">ยังไม่มีผู้รับ</div>'
-    : emailRecipients.map((r,i)=>`
-      <div class="recipient-row">
-        <input class="inp-rname" value="${r.name}"  onchange="emailRecipients[${i}].name=this.value;saveR();"/>
-        <input class="inp-email" value="${r.email}" type="email" onchange="emailRecipients[${i}].email=this.value;saveR();"/>
-        <button class="btn-icon" onclick="emailRecipients.splice(${i},1);saveR();renderRecipients();">✕</button>
-      </div>`).join('');
-}
+        setInterval(() => {
+            document.getElementById('clockDisplay').textContent = new Date().toLocaleTimeString('th-TH');
+        }, 1000);
 
-function addRecipient() {
-  const name=document.getElementById('newName').value.trim(), email=document.getElementById('newEmail').value.trim();
-  if (!email) { alert('กรุณาใส่ Email'); return; }
-  emailRecipients.push({name:name||email, email});
-  document.getElementById('newName').value=''; document.getElementById('newEmail').value='';
-  saveR(); renderRecipients();
-}
+        // Start App
+        window.onload = () => {
+            buildCards();
+            initChart();
+            reconnect();
+        };
 
-function saveR() { localStorage.setItem('emailRecipients',JSON.stringify(emailRecipients)); updateEmailStatus(); }
-
-// ============================================================
-// CHART — Realtime + Time Range
-// ============================================================
-const realtimeLabels  = [];
-const realtimeDatasets = {};
-let chart, currentRange = '1h';
-
-function initChartDatasets() {
-  const legend = document.getElementById('chartLegend');
-  legend.innerHTML = '';
-  ROOMS_CONFIG.forEach(r => {
-    realtimeDatasets[r.id] = realtimeDatasets[r.id] || [];
-    legend.innerHTML += `<span style="display:flex;align-items:center;gap:3px;"><span style="width:9px;height:9px;border-radius:2px;background:${ROOM_COLORS[r.id]};display:inline-block;"></span>${r.name}</span>`;
-  });
-}
-
-function initChart() {
-  initChartDatasets();
-  const datasets = ROOMS_CONFIG.map(r => ({
-    label:r.name, data:realtimeDatasets[r.id], borderColor:ROOM_COLORS[r.id]||'#888',
-    borderWidth:1.5, pointRadius:0, tension:.3, fill:false
-  }));
-  chart = new Chart(document.getElementById('tempChart'),{
-    type:'line', data:{labels:realtimeLabels, datasets},
-    options:{responsive:true,maintainAspectRatio:false,animation:false,
-      plugins:{legend:{display:false}},
-      scales:{
-        x:{ticks:{color:'#7d8590',font:{size:9},maxTicksLimit:8},grid:{color:'rgba(255,255,255,.05)'}},
-        y:{ticks:{color:'#7d8590',font:{size:9},callback:v=>v+'°'},grid:{color:'rgba(255,255,255,.05)'}}
-      }
-    }
-  });
-}
-
-function pushChartPoint(id, temp) {
-  if (currentRange !== '1h' && currentRange !== '3h' && currentRange !== '6h') return; // ช่วงยาวใช้ Firebase
-  const now=new Date();
-  const label=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
-  if (realtimeLabels[realtimeLabels.length-1]!==label) {
-    realtimeLabels.push(label);
-    const maxPoints = currentRange==='1h'?720:currentRange==='3h'?2160:4320;
-    if (realtimeLabels.length>maxPoints) realtimeLabels.shift();
-    ROOMS_CONFIG.forEach(r => { if (realtimeDatasets[r.id]?.length>=maxPoints) realtimeDatasets[r.id].shift(); });
-  }
-  const idx = realtimeLabels.length-1;
-  if (realtimeDatasets[id]) {
-    while (realtimeDatasets[id].length<=idx) realtimeDatasets[id].push(null);
-    realtimeDatasets[id][idx] = temp;
-  }
-  if (chart) chart.update('quiet');
-}
-
-async function setTimeRange(range) {
-  currentRange = range;
-  document.querySelectorAll('.time-btn').forEach(b => b.classList.toggle('active', b.textContent.includes(rangeLabel(range))));
-
-  const rangeLabels = {'1h':'1 ชั่วโมงล่าสุด','3h':'3 ชั่วโมงล่าสุด','6h':'6 ชั่วโมงล่าสุด','1d':'1 วันล่าสุด','1m':'1 เดือนล่าสุด','3m':'3 เดือนล่าสุด','6m':'6 เดือนล่าสุด','1y':'1 ปีล่าสุด'};
-  document.getElementById('chartRangeLabel').textContent = 'แสดง '+rangeLabels[range];
-
-  const shortRanges = ['1h','3h','6h'];
-  if (shortRanges.includes(range)) {
-    // ใช้ realtime data
-    if (chart) { chart.data.labels = realtimeLabels; ROOMS_CONFIG.forEach((r,i) => { chart.data.datasets[i].data = realtimeDatasets[r.id]; }); chart.update(); }
-    return;
-  }
-
-  // ดึงจาก Firebase
-  if (!db) { addLog('ต้องการ Firebase สำหรับดูข้อมูลย้อนหลัง', 'amber'); return; }
-  document.getElementById('chartLoading').style.display = 'flex';
-
-  const { collection, query, where, orderBy, getDocs } = window._fbModules;
-  const msMap = {'1d':86400000,'1m':2592000000,'3m':7776000000,'6m':15552000000,'1y':31536000000};
-  const since = new Date(Date.now() - msMap[range]);
-
-  try {
-    const snap = await getDocs(query(collection(db,'sensorData'), where('ts','>',since), orderBy('ts','asc')));
-    const labels=[], dataMap={};
-    ROOMS_CONFIG.forEach(r => { dataMap[r.id]=[]; });
-
-    snap.forEach(doc => {
-      const d = doc.data();
-      const ts = d.ts?.toDate?.() || new Date(d.ts);
-      labels.push(ts.toLocaleDateString('th-TH')+' '+ts.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}));
-      ROOMS_CONFIG.forEach(r => { dataMap[r.id].push(d.rooms?.[r.id]?.temp ?? null); });
-    });
-
-    if (chart) {
-      chart.data.labels = labels;
-      ROOMS_CONFIG.forEach((r,i) => { chart.data.datasets[i].data = dataMap[r.id]; });
-      chart.update();
-    }
-  } catch(e) { addLog('โหลดกราฟ Firebase error: '+e.message,'red'); }
-  document.getElementById('chartLoading').style.display = 'none';
-}
-
-function rangeLabel(r) { return {'1h':'1 ชม.','3h':'3 ชม.','6h':'6 ชม.','1d':'1 วัน','1m':'1 เดือน','3m':'3 เดือน','6m':'6 เดือน','1y':'1 ปี'}[r]||r; }
-
-// ============================================================
-// EXCEL EXPORT
-// ============================================================
-async function exportExcelRange(days) {
-  if (days>1 && !db) { alert('ต้องการ Firebase สำหรับ Export ข้อมูลย้อนหลังครับ'); return; }
-  let rows = [];
-
-  if (days===1) {
-    // ใช้ realtime data
-    realtimeLabels.forEach((label,i) => {
-      const row = {เวลา:label};
-      ROOMS_CONFIG.forEach(r => { row[r.name+'_°C'] = realtimeDatasets[r.id]?.[i] ?? ''; });
-      rows.push(row);
-    });
-  } else {
-    const { collection, query, where, orderBy, getDocs } = window._fbModules;
-    const since = new Date(Date.now()-days*86400000);
-    const snap = await getDocs(query(collection(db,'sensorData'),where('ts','>',since),orderBy('ts','asc')));
-    snap.forEach(doc => {
-      const d = doc.data();
-      const ts = d.ts?.toDate?.() || new Date(d.ts);
-      const row = {วันที่:ts.toLocaleDateString('th-TH'), เวลา:ts.toLocaleTimeString('th-TH')};
-      ROOMS_CONFIG.forEach(r => {
-        row[r.name+'_°C']  = d.rooms?.[r.id]?.temp ?? '';
-        row[r.name+'_%RH'] = d.rooms?.[r.id]?.hum  ?? '';
-      });
-      rows.push(row);
-    });
-  }
-
-  if (rows.length===0) { alert('ไม่มีข้อมูลในช่วงเวลานี้ครับ'); return; }
-
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Cold Room Data');
-
-  // Sheet สรุป Alarm ถ้ามีใน Firebase
-  const today = new Date().toLocaleDateString('th-TH');
-  XLSX.writeFile(wb, `ColdRoom_${today.replace(/\//g,'-')}_${days}day.xlsx`);
-  addLog(`📥 Export Excel ${days} วัน สำเร็จ (${rows.length} แถว)`, 'green');
-}
-
-function exportExcel() { exportExcelRange(1); }
-
-// ============================================================
-// EVENT LOG
-// ============================================================
-function addLog(msg, color) {
-  const c={red:'#f85149',amber:'#d29922',green:'#3fb950',purple:'#bc8cff',gray:'#7d8590',muted:'#7d8590'}[color]||'#7d8590';
-  const list=document.getElementById('logList');
-  if (list.children[0]?.textContent.includes('รอข้อมูล')) list.innerHTML='';
-  const now=new Date();
-  const t=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
-  const item=document.createElement('div'); item.className='log-item';
-  item.innerHTML=`<div class="log-dot" style="background:${c}"></div><div class="log-msg">${msg}</div><div class="log-time">${t}</div>`;
-  list.insertBefore(item,list.firstChild);
-  if (list.children.length>80) list.removeChild(list.lastChild);
-}
-function clearLog() { document.getElementById('logList').innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px 0;">Log ถูกล้างแล้ว</div>'; }
-
-// ============================================================
-// MQTT
-// ============================================================
-let mqttClient=null;
-function reconnect() {
-  if (mqttClient) mqttClient.end(true);
-  const broker=document.getElementById('brokerInput').value.trim()||'broker.hivemq.com';
-  setConn('connecting');
-  mqttClient=mqtt.connect(`wss://${broker}:8884/mqtt`,{clientId:'coldroom-'+Math.random().toString(16).slice(2,8),clean:true,reconnectPeriod:5000,connectTimeout:10000});
-  mqttClient.on('connect',()=>{ setConn('connected'); addLog('เชื่อมต่อ MQTT สำเร็จ','green'); ROOMS_CONFIG.forEach(r=>mqttClient.subscribe('coldroom/'+r.id+'/sensor')); });
-  mqttClient.on('message',(topic,msg)=>{ try { const d=JSON.parse(msg.toString()); const id=d.room||topic.split('/')[1]; if(id in roomState) updateCard(id,d); } catch(e){} });
-  mqttClient.on('error',err=>{ setConn('error'); addLog('MQTT error: '+err.message,'red'); });
-  mqttClient.on('close',()=>setConn('connecting'));
-}
-function setConn(s) {
-  const m={connecting:['dot-connecting','กำลังเชื่อมต่อ...'],connected:['dot-connected','เชื่อมต่อแล้ว'],error:['dot-error','เชื่อมต่อไม่ได้']};
-  document.getElementById('connDot').className='conn-dot '+m[s][0];
-  document.getElementById('connText').textContent=m[s][1];
-}
-
-// ============================================================
-// DEFROST TIMER UPDATE
-// ============================================================
-setInterval(()=>{
-  ROOMS_CONFIG.forEach(r=>{
-    const d=roomState[r.id];
-    if (d&&d.defrost&&defrostStart[r.id]) {
-      const el=document.getElementById('defrost-'+r.id);
-      const min=Math.floor((Date.now()-defrostStart[r.id])/60000);
-      if (el) el.textContent=`❄ Defrosting ${min}m`;
-      if ((Date.now()-defrostStart[r.id])>defrostMaxMs) { const cfg=ROOMS_CONFIG.find(x=>x.id===r.id); if(cfg) checkAlarms(r.id,d,null,cfg); }
-    }
-  });
-},30000);
-
-// ============================================================
-// INIT
-// ============================================================
-document.addEventListener('fbready', async () => {
-  buildCards();
-  initChart();
-  updateSummary();
-
-  // โหลดค่าที่บันทึกไว้
-  ['ejServiceId','ejTemplateId','ejPublicKey'].forEach(k => { const v=localStorage.getItem(k); if(v) document.getElementById(k).value=v; });
-  ['fbApiKey','fbAuthDomain','fbProjectId','fbStorageBucket','fbMessagingSenderId','fbAppId'].forEach(k=>{ const v=localStorage.getItem(k); if(v) document.getElementById(k).value=v; });
-  const savedDM=localStorage.getItem('defrostMaxMin'); if(savedDM) document.getElementById('defrostMaxMin').value=savedDM;
-
-  renderRecipients();
-  updateEmailStatus();
-
-  // auto-init Firebase ถ้ามีค่าบันทึกไว้
-  if (localStorage.getItem('fbApiKey') && localStorage.getItem('fbProjectId')) {
-    await initFirebase(false);
-  }
-
-  reconnect();
-});
-</script>
+    </script>
 </body>
 </html>
