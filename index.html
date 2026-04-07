@@ -464,7 +464,20 @@ details summary::-webkit-details-marker{display:none;}
   </div>
 
   <div class="section-title">สถานะห้องเย็น</div>
-  <div class="rooms-grid" id="roomsGrid"></div>
+
+  <!-- Zone A -->
+  <div style="display:flex;align-items:center;gap:8px;margin:8px 0 6px;">
+    <div style="background:rgba(88,166,255,.15);border:1px solid rgba(88,166,255,.3);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;color:var(--blue);">Zone A · เตรียมปรุง</div>
+    <div style="font-size:10px;color:var(--muted);">3 ห้อง</div>
+  </div>
+  <div class="rooms-grid" id="roomsGridA"></div>
+
+  <!-- Zone B -->
+  <div style="display:flex;align-items:center;gap:8px;margin:12px 0 6px;">
+    <div style="background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.3);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;color:var(--green);">Zone B · บรรจุ Carton</div>
+    <div style="font-size:10px;color:var(--muted);">7 ห้อง</div>
+  </div>
+  <div class="rooms-grid" id="roomsGridB"></div>
 
   <!-- CHART WITH TIME RANGE -->
   <div class="chart-section">
@@ -523,19 +536,36 @@ details summary::-webkit-details-marker{display:none;}
 // DEFAULT CONFIG
 // ============================================================
 const DEFAULT_ROOMS = [
-  {id:'A',name:'ห้องเย็น A',   zone:'Zone 1',target:-18,min:-20,max:-15,warnOffset:1},
-  {id:'B',name:'ห้องเย็น B',   zone:'Zone 1',target:-18,min:-20,max:-15,warnOffset:1},
-  {id:'C',name:'ห้องแช่เย็น C',zone:'Zone 2',target:2,  min:0,  max:5,  warnOffset:0.5},
-  {id:'D',name:'ห้องแช่เย็น D',zone:'Zone 2',target:2,  min:0,  max:5,  warnOffset:0.5},
-  {id:'E',name:'ห้องเย็น E',   zone:'Zone 3',target:-20,min:-22,max:-17,warnOffset:1},
-  {id:'F',name:'ห้องแช่แข็ง F',zone:'Zone 3',target:-25,min:-28,max:-22,warnOffset:1},
-  {id:'G',name:'ห้องแช่แข็ง G',zone:'Zone 3',target:-25,min:-28,max:-22,warnOffset:1},
+  // Zone A — เตรียมปรุง (3 ห้อง)
+  {id:'ZA1',name:'ห้อง 1',  zone:'Zone A · เตรียมปรุง',target:-20,min:-22,max:-18,warnOffset:1},
+  {id:'ZA3',name:'ห้อง 3',  zone:'Zone A · เตรียมปรุง',target:-20,min:-22,max:-18,warnOffset:1},
+  {id:'ZA4',name:'ห้อง 4',  zone:'Zone A · เตรียมปรุง',target:-20,min:-22,max:-18,warnOffset:1},
+  // Zone B — บรรจุ Carton (7 ห้อง)
+  {id:'A',  name:'ห้อง A',  zone:'Zone B · บรรจุ Carton',target:-18,min:-20,max:-15,warnOffset:1},
+  {id:'B',  name:'ห้อง B',  zone:'Zone B · บรรจุ Carton',target:-18,min:-20,max:-15,warnOffset:1},
+  {id:'ZB2',name:'ห้อง 2',  zone:'Zone B · บรรจุ Carton',target:2,  min:0,  max:5,  warnOffset:0.5},
+  {id:'ZB5',name:'ห้อง 5',  zone:'Zone B · บรรจุ Carton',target:2,  min:0,  max:5,  warnOffset:0.5},
+  {id:'ZB6',name:'ห้อง 6',  zone:'Zone B · บรรจุ Carton',target:-20,min:-22,max:-17,warnOffset:1},
+  {id:'ZB7',name:'ห้อง 7',  zone:'Zone B · บรรจุ Carton',target:-25,min:-28,max:-22,warnOffset:1},
+  {id:'ZB8',name:'ห้อง 8',  zone:'Zone B · บรรจุ Carton',target:-25,min:-28,max:-22,warnOffset:1},
 ];
 
+// Auto-reset ถ้า localStorage เก่าไม่มี Zone A หรือห้องน้อยกว่า 10
+(function() {
+  const stored = JSON.parse(localStorage.getItem('roomsConfig') || 'null');
+  const hasZoneA = stored && stored.some(r => r.zone && r.zone.includes('Zone A'));
+  const hasAll10 = stored && stored.length >= 10;
+  if (!stored || !hasZoneA || !hasAll10) {
+    localStorage.removeItem('roomsConfig');
+  }
+})();
 let ROOMS_CONFIG = JSON.parse(localStorage.getItem('roomsConfig') || 'null') || DEFAULT_ROOMS;
 let cooldownMs   = (parseInt(localStorage.getItem('cooldownMin')   || '5'))  * 60000;
 let defrostMaxMs = (parseInt(localStorage.getItem('defrostMaxMin') || '45')) * 60000;
-const ROOM_COLORS = {A:'#58a6ff',B:'#f85149',C:'#3fb950',D:'#d29922',E:'#bc8cff',F:'#39d0d8',G:'#fb8f44'};
+const ROOM_COLORS = {
+  ZA1:'#58a6ff',ZA3:'#4fc3f7',ZA4:'#29b6f6',
+  A:'#3fb950',B:'#66bb6a',ZB2:'#d29922',ZB5:'#ffa726',ZB6:'#bc8cff',ZB7:'#39d0d8',ZB8:'#fb8f44'
+};
 const roomState  = {};
 ROOMS_CONFIG.forEach(r => { roomState[r.id] = null; });
 
@@ -792,8 +822,11 @@ setInterval(updateClock,1000); updateClock();
 // BUILD ROOM CARDS
 // ============================================================
 function buildCards() {
-  const grid = document.getElementById('roomsGrid');
-  grid.innerHTML = '';
+  const gridA = document.getElementById('roomsGridA');
+  const gridB = document.getElementById('roomsGridB');
+  if (gridA) gridA.innerHTML = '';
+  if (gridB) gridB.innerHTML = '';
+
   ROOMS_CONFIG.forEach(r => {
     const card = document.createElement('div');
     card.className = 'room-card'; card.id = 'card-'+r.id;
@@ -807,14 +840,14 @@ function buildCards() {
       </div>
       <div class="metrics">
         <div class="metric-box">
-          <div class="metric-label">อุณหภูมิ</div>
+          <div class="metric-label">🌡 อากาศห้อง</div>
           <div class="metric-value val-cold" id="temp-${r.id}">--<span class="metric-unit">°C</span></div>
           <div class="metric-hint" id="hint-${r.id}">Min ${r.min} / Max ${r.max}°C</div>
         </div>
         <div class="metric-box">
-          <div class="metric-label">ความชื้น</div>
-          <div class="metric-value" id="hum-${r.id}">--<span class="metric-unit">%RH</span></div>
-          <div class="metric-hint">Relative Humidity</div>
+          <div class="metric-label">📦 สินค้า</div>
+          <div class="metric-value" id="hum-${r.id}" style="color:var(--amber);">--<span class="metric-unit">°C</span></div>
+          <div class="metric-hint" id="pdiff-${r.id}">Product Temp</div>
         </div>
       </div>
       <div class="door-row">
@@ -826,8 +859,13 @@ function buildCards() {
         <span class="equip-badge defrost-off" id="defrost-${r.id}">❄ Defrost --</span>
       </div>
       <div id="alarms-${r.id}" style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;min-height:0;"></div>`;
-    grid.appendChild(card);
+
+    // แยก Zone A / Zone B
+    const isZoneA = r.zone.includes('Zone A');
+    const target  = isZoneA ? gridA : gridB;
+    if (target) target.appendChild(card);
   });
+
   document.getElementById('sumTotal').textContent = ROOMS_CONFIG.length;
   document.getElementById('roomCountLabel').textContent = `IoT Dashboard · ${ROOMS_CONFIG.length} ห้องเย็น`;
 }
@@ -863,7 +901,25 @@ function updateCard(id, data) {
   const tc = t<0?'val-cold':(status==='alarm'?'val-err':status==='warn'?'val-warn':'val-ok');
   document.getElementById('temp-'+id).className = 'metric-value '+tc;
   document.getElementById('temp-'+id).innerHTML = t.toFixed(1)+'<span class="metric-unit">°C</span>';
-  document.getElementById('hum-'+id).innerHTML  = Math.round(data.hum)+'<span class="metric-unit">%RH</span>';
+
+  // Product Temp (field: product_temp จาก ESP32 — Phase 2)
+  const pt = data.product_temp;
+  const humEl = document.getElementById('hum-'+id);
+  const pdiffEl = document.getElementById('pdiff-'+id);
+  if (pt !== undefined && pt !== null && !isNaN(pt)) {
+    const diff = (pt - t).toFixed(1);
+    const diffSign = diff > 0 ? '+' : '';
+    const ptColor = Math.abs(pt - t) > 3 ? 'var(--red)' : 'var(--amber)';
+    humEl.style.color = ptColor;
+    humEl.innerHTML = pt.toFixed(1)+'<span class="metric-unit">°C</span>';
+    pdiffEl.textContent = `ต่างจากอากาศ ${diffSign}${diff}°C`;
+    pdiffEl.style.color = Math.abs(diff) > 3 ? 'var(--red)' : 'var(--muted)';
+  } else {
+    humEl.style.color = 'var(--muted)';
+    humEl.innerHTML = '--<span class="metric-unit">°C</span>';
+    pdiffEl.textContent = 'Product Temp';
+    pdiffEl.style.color = '';
+  }
   document.getElementById('hint-'+id).textContent = `Min ${cfg.min} / Max ${cfg.max}°C`;
   document.getElementById('rname-'+id).textContent = cfg.name;
   document.getElementById('rzone-'+id).textContent = `${cfg.zone} · ${cfg.target}°C`;
@@ -1210,7 +1266,10 @@ async function exportExcelRange(days) {
     // ใช้ realtime data
     realtimeLabels.forEach((label,i) => {
       const row = {เวลา:label};
-      ROOMS_CONFIG.forEach(r => { row[r.name+'_°C'] = realtimeDatasets[r.id]?.[i] ?? ''; });
+      ROOMS_CONFIG.forEach(r => {
+        row[r.name+'_อากาศ°C']  = realtimeDatasets[r.id]?.[i] ?? '';
+        row[r.name+'_สินค้า°C'] = roomState[r.id]?.product_temp ?? '';
+      });
       rows.push(row);
     });
   } else {
@@ -1222,8 +1281,8 @@ async function exportExcelRange(days) {
       const ts = d.ts?.toDate?.() || new Date(d.ts);
       const row = {วันที่:ts.toLocaleDateString('th-TH'), เวลา:ts.toLocaleTimeString('th-TH')};
       ROOMS_CONFIG.forEach(r => {
-        row[r.name+'_°C']  = d.rooms?.[r.id]?.temp ?? '';
-        row[r.name+'_%RH'] = d.rooms?.[r.id]?.hum  ?? '';
+        row[r.name+'_อากาศ°C']  = d.rooms?.[r.id]?.temp ?? '';
+        row[r.name+'_สินค้า°C'] = d.rooms?.[r.id]?.product_temp ?? '';
       });
       rows.push(row);
     });
