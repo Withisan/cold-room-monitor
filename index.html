@@ -681,8 +681,20 @@ function applySettings(d) {
   if (!d) return;
   let changed = false;
   if (d.roomsConfig) {
-    ROOMS_CONFIG = d.roomsConfig;
-    localStorage.setItem('roomsConfig', JSON.stringify(ROOMS_CONFIG));
+    // ตรวจสอบว่า config จาก Firebase เป็นเวอร์ชันใหม่ (Zone A + 10 ห้อง)
+    const hasZoneA = d.roomsConfig.some(r => r.zone && r.zone.includes('Zone A'));
+    const hasAll10 = d.roomsConfig.length >= 10;
+    if (hasZoneA && hasAll10) {
+      ROOMS_CONFIG = d.roomsConfig;
+      localStorage.setItem('roomsConfig', JSON.stringify(ROOMS_CONFIG));
+    } else {
+      // Firebase มีข้อมูลเก่า → ใช้ DEFAULT_ROOMS และ save ใหม่ขึ้น Firebase
+      addLog('⚠ Firebase มี config เก่า → รีเซ็ตเป็น 10 ห้องใหม่', 'amber');
+      ROOMS_CONFIG = JSON.parse(JSON.stringify(DEFAULT_ROOMS));
+      localStorage.setItem('roomsConfig', JSON.stringify(ROOMS_CONFIG));
+      // save DEFAULT_ROOMS ใหม่ขึ้น Firebase ถ้าเป็น Admin
+      setTimeout(() => saveSettingsToFirebase(), 2000);
+    }
     changed = true;
   }
   if (d.cooldownMin)   cooldownMs   = d.cooldownMin * 60000;
